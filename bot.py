@@ -55,26 +55,40 @@ async def list_reminders(update, context):
 
 async def tambah_reminder(update, context):
     try:
-        args = context.args
-        time = args[0]
-        days = args[1]
-        text = " ".join(args[2:])
-        add_reminder(time, days, text)
+        raw = " ".join(context.args)
+        items = raw.split(",")
+        added = []
+
+        for item in items:
+            parts = item.strip().split(" ", 2)
+            time = parts[0]
+            days = parts[1]
+            text = parts[2]
+            add_reminder(time, days, text)
+            added.append(f"⏰ {time} | {days} | {text}")
+
         setup_scheduler(context.application)
-        await update.message.reply_text(f"✅ Reminder ditambahkan!\n⏰ {time} | {days} | {text}")
+        msg = "✅ Reminder ditambahkan!\n\n" + "\n".join(added)
+        await update.message.reply_text(msg)
     except Exception as e:
-        await update.message.reply_text("❌ Format salah!\nGunakan: /tambah 08:00 daily Minum obat")
+        await update.message.reply_text("❌ Format salah!\nGunakan:\n/tambah 08:00 daily Minum obat , 09:00 daily Olahraga")
 
 async def hapus_reminder(update, context):
     try:
-        index = int(context.args[0]) - 1
+        indexes = [int(x.strip()) - 1 for x in " ".join(context.args).split(",")]
+        indexes_sorted = sorted(indexes, reverse=True)  # hapus dari bawah biar index tidak geser
         reminders = get_reminders()
-        teks = reminders[index]['text']
-        delete_reminder(index)
+        deleted = []
+
+        for index in indexes_sorted:
+            deleted.append(reminders[index]['text'])
+            delete_reminder(index)
+
         setup_scheduler(context.application)
-        await update.message.reply_text(f"🗑️ Reminder '{teks}' dihapus!")
+        msg = "🗑️ Reminder dihapus:\n\n" + "\n".join(f"- {t}" for t in deleted)
+        await update.message.reply_text(msg)
     except Exception as e:
-        await update.message.reply_text("❌ Format salah!\nGunakan: /hapus 1")
+        await update.message.reply_text("❌ Format salah!\nGunakan: /hapus 1,2,3")
 
 async def post_init(application: Application):
     await application.bot.send_message(
