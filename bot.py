@@ -1,3 +1,4 @@
+
 import logging
 import os
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
@@ -33,7 +34,17 @@ DAY_LABELS = {
 }
 
 scheduler = None
-HAPUS_REMINDER, PILIH_HARI, TUNGGU_JAM_PESAN = range(3)
+
+# ===== STATES =====
+(
+    HAPUS_REMINDER,
+    HAPUS_CATAT,
+    HAPUS_JUDUL,
+    HAPUS_TODO,
+    CHECK_TODOS,
+    PILIH_HARI,
+    TUNGGU_JAM_PESAN
+) = range(7)
 
 async def kirim_pesan(bot: Bot, chat_id: str, teks: str):
     await bot.send_message(chat_id=chat_id, text=teks)
@@ -55,18 +66,18 @@ async def help_command(update, context):
 *Catatan Bebas:*
 /catat Isi catatan - Tambah catatan
 /lihatcatat - Lihat semua catatan
-/hapuscatat 1,2,3 - Hapus catatan
+/hapuscatat - Hapus catatan
 
 *Catatan Judul & Isi:*
 /catatjudul Judul | Isi catatan - Tambah catatan
 /lihatjudul - Lihat semua catatan
-/hapusjudul 1,2,3 - Hapus catatan
+/hapusjudul - Hapus catatan
 
 *To-Do List:*
 /todo Nama tugas - Tambah tugas
 /listtodo - Lihat semua tugas
-/selesai 1,2,3 - Tandai selesai
-/hapustodo 1,2,3 - Hapus tugas
+/checktodos - Tandai selesai
+/hapustodo - Hapus tugas
 
 /help - Tampilkan bantuan ini"""
     await update.message.reply_text(msg, parse_mode="Markdown")
@@ -177,7 +188,6 @@ async def terima_jam_pesan(update, context):
         await update.message.reply_text(f"✅ Reminder ditambahkan!\n\n⏰ {time} | {label} | {pesan}")
     except Exception as e:
         await update.message.reply_text("❌ Terjadi error, coba lagi.")
-
     return ConversationHandler.END
 
 async def hapus_reminder(update, context):
@@ -231,8 +241,22 @@ async def lihat_catat(update, context):
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def hapus_catat(update, context):
+    notes = get_notes()
+    if not notes:
+        await update.message.reply_text("Belum ada catatan.")
+        return ConversationHandler.END
+
+    msg = "🗑️ *Hapus Catatan*\n\nPilih nomor yang mau dihapus:\n\n"
+    for i, n in enumerate(notes):
+        msg += f"{i+1}. {n['text']}\n"
+    msg += "\nBalas dengan nomor: `1` atau `1,2,3`"
+
+    await update.message.reply_text(msg, parse_mode="Markdown")
+    return HAPUS_CATAT
+
+async def konfirmasi_hapus_catat(update, context):
     try:
-        indexes = sorted([int(x.strip()) - 1 for x in " ".join(context.args).split(",")], reverse=True)
+        indexes = sorted([int(x.strip()) - 1 for x in update.message.text.split(",")], reverse=True)
         notes = get_notes()
         deleted = []
         for index in indexes:
@@ -240,7 +264,8 @@ async def hapus_catat(update, context):
             delete_note(index)
         await update.message.reply_text("🗑️ Catatan dihapus:\n\n" + "\n".join(f"- {t}" for t in deleted))
     except:
-        await update.message.reply_text("❌ Format salah!\nGunakan: /hapuscatat 1,2,3")
+        await update.message.reply_text("❌ Format salah!\nKirim nomor seperti: `1` atau `1,2,3`", parse_mode="Markdown")
+    return ConversationHandler.END
 
 # ===== CATATAN JUDUL & ISI =====
 async def catat_judul(update, context):
@@ -266,8 +291,22 @@ async def lihat_judul(update, context):
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def hapus_judul(update, context):
+    notes = get_titled_notes()
+    if not notes:
+        await update.message.reply_text("Belum ada catatan.")
+        return ConversationHandler.END
+
+    msg = "🗑️ *Hapus Catatan Judul*\n\nPilih nomor yang mau dihapus:\n\n"
+    for i, n in enumerate(notes):
+        msg += f"{i+1}. *{n['title']}* — {n['content'][:30]}...\n"
+    msg += "\nBalas dengan nomor: `1` atau `1,2,3`"
+
+    await update.message.reply_text(msg, parse_mode="Markdown")
+    return HAPUS_JUDUL
+
+async def konfirmasi_hapus_judul(update, context):
     try:
-        indexes = sorted([int(x.strip()) - 1 for x in " ".join(context.args).split(",")], reverse=True)
+        indexes = sorted([int(x.strip()) - 1 for x in update.message.text.split(",")], reverse=True)
         notes = get_titled_notes()
         deleted = []
         for index in indexes:
@@ -275,7 +314,8 @@ async def hapus_judul(update, context):
             delete_titled_note(index)
         await update.message.reply_text("🗑️ Catatan dihapus:\n\n" + "\n".join(f"- {t}" for t in deleted))
     except:
-        await update.message.reply_text("❌ Format salah!\nGunakan: /hapusjudul 1,2,3")
+        await update.message.reply_text("❌ Format salah!\nKirim nomor seperti: `1` atau `1,2,3`", parse_mode="Markdown")
+    return ConversationHandler.END
 
 # ===== TO-DO LIST =====
 async def todo(update, context):
@@ -299,9 +339,23 @@ async def list_todo(update, context):
         msg += f"{i+1}. {t['status']} {t['task']}\n"
     await update.message.reply_text(msg, parse_mode="Markdown")
 
-async def selesai_todo(update, context):
+async def check_todos(update, context):
+    todos = get_todos()
+    if not todos:
+        await update.message.reply_text("Belum ada tugas.")
+        return ConversationHandler.END
+
+    msg = "✅ *Tandai Selesai*\n\nPilih nomor yang mau ditandai:\n\n"
+    for i, t in enumerate(todos):
+        msg += f"{i+1}. {t['status']} {t['task']}\n"
+    msg += "\nBalas dengan nomor: `1` atau `1,2,3`"
+
+    await update.message.reply_text(msg, parse_mode="Markdown")
+    return CHECK_TODOS
+
+async def konfirmasi_check_todos(update, context):
     try:
-        indexes = sorted([int(x.strip()) - 1 for x in " ".join(context.args).split(",")], reverse=True)
+        indexes = sorted([int(x.strip()) - 1 for x in update.message.text.split(",")], reverse=True)
         todos = get_todos()
         done = []
         for index in indexes:
@@ -309,11 +363,26 @@ async def selesai_todo(update, context):
             done.append(todos[index]['task'])
         await update.message.reply_text("✅ Tugas selesai:\n\n" + "\n".join(f"- {t}" for t in done))
     except:
-        await update.message.reply_text("❌ Format salah!\nGunakan: /selesai 1,2,3")
+        await update.message.reply_text("❌ Format salah!\nKirim nomor seperti: `1` atau `1,2,3`", parse_mode="Markdown")
+    return ConversationHandler.END
 
 async def hapus_todo(update, context):
+    todos = get_todos()
+    if not todos:
+        await update.message.reply_text("Belum ada tugas.")
+        return ConversationHandler.END
+
+    msg = "🗑️ *Hapus Tugas*\n\nPilih nomor yang mau dihapus:\n\n"
+    for i, t in enumerate(todos):
+        msg += f"{i+1}. {t['status']} {t['task']}\n"
+    msg += "\nBalas dengan nomor: `1` atau `1,2,3`"
+
+    await update.message.reply_text(msg, parse_mode="Markdown")
+    return HAPUS_TODO
+
+async def konfirmasi_hapus_todo(update, context):
     try:
-        indexes = sorted([int(x.strip()) - 1 for x in " ".join(context.args).split(",")], reverse=True)
+        indexes = sorted([int(x.strip()) - 1 for x in update.message.text.split(",")], reverse=True)
         todos = get_todos()
         deleted = []
         for index in indexes:
@@ -321,7 +390,8 @@ async def hapus_todo(update, context):
             delete_todo(index)
         await update.message.reply_text("🗑️ Tugas dihapus:\n\n" + "\n".join(f"- {t}" for t in deleted))
     except:
-        await update.message.reply_text("❌ Format salah!\nGunakan: /hapustodo 1,2,3")
+        await update.message.reply_text("❌ Format salah!\nKirim nomor seperti: `1` atau `1,2,3`", parse_mode="Markdown")
+    return ConversationHandler.END
 
 # ===== SCHEDULER =====
 async def post_init(application: Application):
@@ -374,9 +444,17 @@ def main():
         entry_points=[
             CommandHandler("tambah", tambah_reminder),
             CommandHandler("hapus", hapus_reminder),
+            CommandHandler("hapuscatat", hapus_catat),
+            CommandHandler("hapusjudul", hapus_judul),
+            CommandHandler("hapustodo", hapus_todo),
+            CommandHandler("checktodos", check_todos),
         ],
         states={
             HAPUS_REMINDER: [MessageHandler(filters.TEXT & ~filters.COMMAND, konfirmasi_hapus_reminder)],
+            HAPUS_CATAT: [MessageHandler(filters.TEXT & ~filters.COMMAND, konfirmasi_hapus_catat)],
+            HAPUS_JUDUL: [MessageHandler(filters.TEXT & ~filters.COMMAND, konfirmasi_hapus_judul)],
+            HAPUS_TODO: [MessageHandler(filters.TEXT & ~filters.COMMAND, konfirmasi_hapus_todo)],
+            CHECK_TODOS: [MessageHandler(filters.TEXT & ~filters.COMMAND, konfirmasi_check_todos)],
             PILIH_HARI: [CallbackQueryHandler(pilih_hari_callback, pattern="^hari_")],
             TUNGGU_JAM_PESAN: [MessageHandler(filters.TEXT & ~filters.COMMAND, terima_jam_pesan)],
         },
@@ -389,14 +467,10 @@ def main():
     app.add_handler(CommandHandler("list", list_reminders))
     app.add_handler(CommandHandler("catat", catat))
     app.add_handler(CommandHandler("lihatcatat", lihat_catat))
-    app.add_handler(CommandHandler("hapuscatat", hapus_catat))
     app.add_handler(CommandHandler("catatjudul", catat_judul))
     app.add_handler(CommandHandler("lihatjudul", lihat_judul))
-    app.add_handler(CommandHandler("hapusjudul", hapus_judul))
     app.add_handler(CommandHandler("todo", todo))
     app.add_handler(CommandHandler("listtodo", list_todo))
-    app.add_handler(CommandHandler("selesai", selesai_todo))
-    app.add_handler(CommandHandler("hapustodo", hapus_todo))
     setup_scheduler(app)
     logging.info("Bot berjalan...")
     app.run_polling()
