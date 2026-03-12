@@ -26,8 +26,20 @@ def get_reminders():
 def add_reminder(time, days, text):
     get_sheet("reminders").append_row([time, days, text])
 
+def add_reminders_batch(items):
+    # items = list of (time, days, text)
+    sheet = get_sheet("reminders")
+    rows = [[time, days, text] for time, days, text in items]
+    sheet.append_rows(rows)
+
 def delete_reminder(index):
     get_sheet("reminders").delete_rows(index + 2)
+
+def delete_reminders_batch(indexes):
+    # indexes sudah sorted descending
+    sheet = get_sheet("reminders")
+    for index in indexes:
+        sheet.delete_rows(index + 2)
 
 # ===== CATATAN BEBAS =====
 def get_notes():
@@ -39,6 +51,11 @@ def add_note(text):
 def delete_note(index):
     get_sheet("notes").delete_rows(index + 2)
 
+def delete_notes_batch(indexes):
+    sheet = get_sheet("notes")
+    for index in indexes:
+        sheet.delete_rows(index + 2)
+
 # ===== CATATAN JUDUL & ISI =====
 def get_titled_notes():
     return get_sheet("titled_notes").get_all_records()
@@ -49,6 +66,11 @@ def add_titled_note(title, content):
 def delete_titled_note(index):
     get_sheet("titled_notes").delete_rows(index + 2)
 
+def delete_titled_notes_batch(indexes):
+    sheet = get_sheet("titled_notes")
+    for index in indexes:
+        sheet.delete_rows(index + 2)
+
 # ===== TO-DO LIST =====
 def get_todos():
     return get_sheet("todos").get_all_records()
@@ -56,11 +78,21 @@ def get_todos():
 def add_todo(task):
     get_sheet("todos").append_row([task, "❌"])
 
+def delete_todo(index):
+    get_sheet("todos").delete_rows(index + 2)
+
+def delete_todos_batch(indexes):
+    sheet = get_sheet("todos")
+    for index in indexes:
+        sheet.delete_rows(index + 2)
+
 def complete_todo(index):
     get_sheet("todos").update_cell(index + 2, 2, "✅")
 
-def delete_todo(index):
-    get_sheet("todos").delete_rows(index + 2)
+def complete_todos_batch(indexes):
+    sheet = get_sheet("todos")
+    for index in indexes:
+        sheet.update_cell(index + 2, 2, "✅")
 
 # ===== EDIT =====
 def edit_reminder(index, field, value):

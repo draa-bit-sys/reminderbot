@@ -6,10 +6,10 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 import pytz
 from sheets import (
-    get_reminders, add_reminder, delete_reminder, edit_reminder,
-    get_notes, add_note, delete_note, edit_note,
-    get_titled_notes, add_titled_note, delete_titled_note, edit_titled_note,
-    get_todos, add_todo, complete_todo, delete_todo, edit_todo
+    get_reminders, add_reminder, add_reminders_batch, delete_reminder, delete_reminders_batch, edit_reminder,
+    get_notes, add_note, delete_note, delete_notes_batch, edit_note,
+    get_titled_notes, add_titled_note, delete_titled_note, delete_titled_notes_batch, edit_titled_note,
+    get_todos, add_todo, complete_todo, complete_todos_batch, delete_todo, delete_todos_batch, edit_todo
 )
 
 # ===== CONFIG =====
@@ -36,7 +36,6 @@ scheduler = None
 
 # ===== STATES =====
 (
-    # TAMBAH
     TAMBAH_PILIH_KATEGORI,
     TAMBAH_PILIH_HARI,
     TAMBAH_JAM_PESAN,
@@ -45,16 +44,13 @@ scheduler = None
     TAMBAH_INPUT_JUDUL,
     TAMBAH_INPUT_ISI_JUDUL,
     TAMBAH_INPUT_TODO,
-    # HAPUS
     HAPUS_PILIH_KATEGORI,
     HAPUS_PILIH_NOMOR,
-    # EDIT
     EDIT_PILIH_KATEGORI,
     EDIT_PILIH_NOMOR,
     EDIT_PILIH_FIELD,
     EDIT_PILIH_HARI,
     EDIT_INPUT_NILAI,
-    # CHECKTODOS
     CHECK_TODOS,
 ) = range(16)
 
@@ -147,7 +143,6 @@ def keyboard_kategori(prefix):
     ])
 
 async def tambah(update, context):
-    # Kalau ada args langsung proses sebagai reminder multiple
     if context.args:
         try:
             raw = " ".join(context.args)
@@ -171,9 +166,7 @@ async def tambah(update, context):
 
                 parsed.append((time, days, text))
 
-            for time, days, text in parsed:
-                add_reminder(time, days, text)
-
+            add_reminders_batch(parsed)
             setup_scheduler(context.application)
             added = [f"⏰ {t} | {d} | {tx}" for t, d, tx in parsed]
             await update.message.reply_text("✅ Reminder ditambahkan!\n\n" + "\n".join(added))
@@ -361,28 +354,24 @@ async def hapus_pilih_nomor(update, context):
 
         if kategori == "reminder":
             data = get_reminders()
-            for i in indexes:
-                deleted.append(data[i]['text'])
-                delete_reminder(i)
+            deleted = [data[i]['text'] for i in indexes]
+            delete_reminders_batch(indexes)
             setup_scheduler(context.application)
 
         elif kategori == "catat":
             data = get_notes()
-            for i in indexes:
-                deleted.append(data[i]['text'])
-                delete_note(i)
+            deleted = [data[i]['text'] for i in indexes]
+            delete_notes_batch(indexes)
 
         elif kategori == "judul":
             data = get_titled_notes()
-            for i in indexes:
-                deleted.append(data[i]['title'])
-                delete_titled_note(i)
+            deleted = [data[i]['title'] for i in indexes]
+            delete_titled_notes_batch(indexes)
 
         elif kategori == "todo":
             data = get_todos()
-            for i in indexes:
-                deleted.append(data[i]['task'])
-                delete_todo(i)
+            deleted = [data[i]['task'] for i in indexes]
+            delete_todos_batch(indexes)
 
         await update.message.reply_text("🗑️ Dihapus:\n\n" + "\n".join(f"- {t}" for t in deleted))
     except:
@@ -591,10 +580,8 @@ async def konfirmasi_check_todos(update, context):
     try:
         indexes = sorted([int(x.strip()) - 1 for x in update.message.text.split(",")], reverse=True)
         todos = get_todos()
-        done = []
-        for index in indexes:
-            complete_todo(index)
-            done.append(todos[index]['task'])
+        done = [todos[i]['task'] for i in indexes]
+        complete_todos_batch(indexes)
         await update.message.reply_text("✅ Tugas selesai:\n\n" + "\n".join(f"- {t}" for t in done))
     except:
         await update.message.reply_text("❌ Format salah!\nKetik nomor: `1` atau `1,2,3`", parse_mode="Markdown")
@@ -648,34 +635,34 @@ def main():
     app = Application.builder().token(TOKEN).post_init(post_init).build()
 
     conv_handler = ConversationHandler(
-    entry_points=[
-        CommandHandler("tambah", tambah),
-        CommandHandler("hapus", hapus),
-        CommandHandler("edit", edit),
-        CommandHandler("checktodos", check_todos),
-    ],
-    states={
-        TAMBAH_PILIH_KATEGORI: [CallbackQueryHandler(tambah_pilih_kategori, pattern="^tambah_")],
-        TAMBAH_PILIH_HARI: [CallbackQueryHandler(tambah_pilih_hari, pattern="^tambahhari_")],
-        TAMBAH_JAM_PESAN: [MessageHandler(filters.TEXT & ~filters.COMMAND, tambah_jam_pesan)],
-        TAMBAH_INPUT_CATAT: [MessageHandler(filters.TEXT & ~filters.COMMAND, tambah_terima_catat)],
-        TAMBAH_INPUT_JUDUL: [MessageHandler(filters.TEXT & ~filters.COMMAND, tambah_terima_judul)],
-        TAMBAH_INPUT_ISI_JUDUL: [MessageHandler(filters.TEXT & ~filters.COMMAND, tambah_terima_isi_judul)],
-        TAMBAH_INPUT_TODO: [MessageHandler(filters.TEXT & ~filters.COMMAND, tambah_terima_todo)],
-        HAPUS_PILIH_KATEGORI: [CallbackQueryHandler(hapus_pilih_kategori, pattern="^hapus_")],
-        HAPUS_PILIH_NOMOR: [MessageHandler(filters.TEXT & ~filters.COMMAND, hapus_pilih_nomor)],
-        EDIT_PILIH_KATEGORI: [CallbackQueryHandler(edit_pilih_kategori, pattern="^edit_")],
-        EDIT_PILIH_NOMOR: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_pilih_nomor)],
-        EDIT_PILIH_FIELD: [CallbackQueryHandler(edit_pilih_field, pattern="^editfield_")],
-        EDIT_PILIH_HARI: [CallbackQueryHandler(edit_pilih_hari_baru, pattern="^edithari_")],
-        EDIT_INPUT_NILAI: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_input_nilai)],
-        CHECK_TODOS: [MessageHandler(filters.TEXT & ~filters.COMMAND, konfirmasi_check_todos)],
-    },
-    fallbacks=[CommandHandler("batal", batal)],
-    per_message=False,
-    per_chat=True,
-    conversation_timeout=60,
-)
+        entry_points=[
+            CommandHandler("tambah", tambah),
+            CommandHandler("hapus", hapus),
+            CommandHandler("edit", edit),
+            CommandHandler("checktodos", check_todos),
+        ],
+        states={
+            TAMBAH_PILIH_KATEGORI: [CallbackQueryHandler(tambah_pilih_kategori, pattern="^tambah_")],
+            TAMBAH_PILIH_HARI: [CallbackQueryHandler(tambah_pilih_hari, pattern="^tambahhari_")],
+            TAMBAH_JAM_PESAN: [MessageHandler(filters.TEXT & ~filters.COMMAND, tambah_jam_pesan)],
+            TAMBAH_INPUT_CATAT: [MessageHandler(filters.TEXT & ~filters.COMMAND, tambah_terima_catat)],
+            TAMBAH_INPUT_JUDUL: [MessageHandler(filters.TEXT & ~filters.COMMAND, tambah_terima_judul)],
+            TAMBAH_INPUT_ISI_JUDUL: [MessageHandler(filters.TEXT & ~filters.COMMAND, tambah_terima_isi_judul)],
+            TAMBAH_INPUT_TODO: [MessageHandler(filters.TEXT & ~filters.COMMAND, tambah_terima_todo)],
+            HAPUS_PILIH_KATEGORI: [CallbackQueryHandler(hapus_pilih_kategori, pattern="^hapus_")],
+            HAPUS_PILIH_NOMOR: [MessageHandler(filters.TEXT & ~filters.COMMAND, hapus_pilih_nomor)],
+            EDIT_PILIH_KATEGORI: [CallbackQueryHandler(edit_pilih_kategori, pattern="^edit_")],
+            EDIT_PILIH_NOMOR: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_pilih_nomor)],
+            EDIT_PILIH_FIELD: [CallbackQueryHandler(edit_pilih_field, pattern="^editfield_")],
+            EDIT_PILIH_HARI: [CallbackQueryHandler(edit_pilih_hari_baru, pattern="^edithari_")],
+            EDIT_INPUT_NILAI: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_input_nilai)],
+            CHECK_TODOS: [MessageHandler(filters.TEXT & ~filters.COMMAND, konfirmasi_check_todos)],
+        },
+        fallbacks=[CommandHandler("batal", batal)],
+        per_message=False,
+        per_chat=True,
+        conversation_timeout=60,
+    )
 
     app.add_handler(conv_handler)
     app.add_handler(CommandHandler("test", test))
