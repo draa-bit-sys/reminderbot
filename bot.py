@@ -1,12 +1,11 @@
 import logging
 import os
 from telegram import Bot
-from telegram.ext import Application
+from telegram.ext import Application, CommandHandler
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 import pytz
 from reminders import REMINDERS
-from telegram.ext import CommandHandler
 
 # ===== CONFIG =====
 TOKEN    = os.environ.get("BOT_TOKEN")
@@ -25,6 +24,9 @@ DAY_MAP = {
 async def kirim_pesan(bot: Bot, chat_id: str, teks: str):
     await bot.send_message(chat_id=chat_id, text=teks)
     logging.info(f"Terkirim: {teks}")
+
+async def test(update, context):
+    await update.message.reply_text("✅ Bot aktif dan berjalan!")
 
 def setup_scheduler(app: Application):
     tz = pytz.timezone(TIMEZONE)
@@ -48,19 +50,10 @@ def setup_scheduler(app: Application):
 
 def main():
     app = Application.builder().token(TOKEN).build()
+    app.add_handler(CommandHandler("test", test))
     setup_scheduler(app)
     logging.info("Bot berjalan...")
     app.run_polling()
 
 if __name__ == "__main__":
     main()
-    
-async def test(update, context):
-    await update.message.reply_text("✅ Bot aktif dan berjalan!")
-
-def main():
-    app = Application.builder().token(TOKEN).build()
-    app.add_handler(CommandHandler("test", test))
-    setup_scheduler(app)
-    logging.info("Bot berjalan...")
-    app.run_polling()
