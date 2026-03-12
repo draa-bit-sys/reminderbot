@@ -6,6 +6,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 import pytz
 from reminders import REMINDERS
+from telegram.ext import CommandHandler
 
 # ===== CONFIG =====
 TOKEN    = os.environ.get("BOT_TOKEN")
@@ -53,3 +54,13 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
+async def test(update, context):
+    await update.message.reply_text("✅ Bot aktif dan berjalan!")
+
+def main():
+    app = Application.builder().token(TOKEN).build()
+    app.add_handler(CommandHandler("test", test))
+    setup_scheduler(app)
+    logging.info("Bot berjalan...")
+    app.run_polling()
