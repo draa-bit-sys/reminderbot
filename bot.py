@@ -1,4 +1,3 @@
-
 import logging
 import os
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
@@ -43,8 +42,12 @@ scheduler = None
     HAPUS_TODO,
     CHECK_TODOS,
     PILIH_HARI,
-    TUNGGU_JAM_PESAN
-) = range(7)
+    TUNGGU_JAM_PESAN,
+    INPUT_CATAT,
+    INPUT_JUDUL,
+    INPUT_ISI_JUDUL,
+    INPUT_TODO,
+) = range(11)
 
 async def kirim_pesan(bot: Bot, chat_id: str, teks: str):
     await bot.send_message(chat_id=chat_id, text=teks)
@@ -64,22 +67,23 @@ async def help_command(update, context):
 /hapus - Hapus reminder
 
 *Catatan Bebas:*
-/catat Isi catatan - Tambah catatan
+/catat - Tambah catatan
 /lihatcatat - Lihat semua catatan
 /hapuscatat - Hapus catatan
 
 *Catatan Judul & Isi:*
-/catatjudul Judul | Isi catatan - Tambah catatan
+/catatjudul - Tambah catatan dengan judul
 /lihatjudul - Lihat semua catatan
 /hapusjudul - Hapus catatan
 
 *To-Do List:*
-/todo Nama tugas - Tambah tugas
+/todo - Tambah tugas
 /listtodo - Lihat semua tugas
 /checktodos - Tandai selesai
 /hapustodo - Hapus tugas
 
-/help - Tampilkan bantuan ini"""
+/help - Tampilkan bantuan ini
+/batal - Batalkan aksi saat ini"""
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 # ===== REMINDER =====
@@ -220,15 +224,14 @@ async def konfirmasi_hapus_reminder(update, context):
 
 # ===== CATATAN BEBAS =====
 async def catat(update, context):
-    try:
-        text = " ".join(context.args)
-        if not text:
-            await update.message.reply_text("❌ Catatan kosong!\nGunakan: /catat Isi catatan")
-            return
-        add_note(text)
-        await update.message.reply_text(f"📝 Catatan disimpan!\n\n{text}")
-    except:
-        await update.message.reply_text("❌ Format salah!\nGunakan: /catat Isi catatan")
+    await update.message.reply_text("📝 Ketik isi catatan:")
+    return INPUT_CATAT
+
+async def terima_catat(update, context):
+    text = update.message.text.strip()
+    add_note(text)
+    await update.message.reply_text(f"✅ Catatan disimpan!\n\n{text}")
+    return ConversationHandler.END
 
 async def lihat_catat(update, context):
     notes = get_notes()
@@ -269,16 +272,23 @@ async def konfirmasi_hapus_catat(update, context):
 
 # ===== CATATAN JUDUL & ISI =====
 async def catat_judul(update, context):
-    try:
-        raw = " ".join(context.args)
-        if "|" not in raw:
-            await update.message.reply_text("❌ Format salah!\nGunakan: /catatjudul Judul | Isi catatan")
-            return
-        title, content = raw.split("|", 1)
-        add_titled_note(title.strip(), content.strip())
-        await update.message.reply_text(f"📓 Catatan disimpan!\n\n*{title.strip()}*\n{content.strip()}", parse_mode="Markdown")
-    except:
-        await update.message.reply_text("❌ Format salah!\nGunakan: /catatjudul Judul | Isi catatan")
+    await update.message.reply_text("📓 Ketik judul catatan:")
+    return INPUT_JUDUL
+
+async def terima_judul(update, context):
+    context.user_data["judul"] = update.message.text.strip()
+    await update.message.reply_text("📝 Sekarang ketik isi catatan:")
+    return INPUT_ISI_JUDUL
+
+async def terima_isi_judul(update, context):
+    title = context.user_data.get("judul")
+    content = update.message.text.strip()
+    add_titled_note(title, content)
+    await update.message.reply_text(
+        f"✅ Catatan disimpan!\n\n*{title}*\n{content}",
+        parse_mode="Markdown"
+    )
+    return ConversationHandler.END
 
 async def lihat_judul(update, context):
     notes = get_titled_notes()
@@ -319,15 +329,14 @@ async def konfirmasi_hapus_judul(update, context):
 
 # ===== TO-DO LIST =====
 async def todo(update, context):
-    try:
-        task = " ".join(context.args)
-        if not task:
-            await update.message.reply_text("❌ Tugas kosong!\nGunakan: /todo Nama tugas")
-            return
-        add_todo(task)
-        await update.message.reply_text(f"✅ Tugas ditambahkan!\n\n❌ {task}")
-    except:
-        await update.message.reply_text("❌ Format salah!\nGunakan: /todo Nama tugas")
+    await update.message.reply_text("📌 Ketik nama tugas:")
+    return INPUT_TODO
+
+async def terima_todo(update, context):
+    task = update.message.text.strip()
+    add_todo(task)
+    await update.message.reply_text(f"✅ Tugas ditambahkan!\n\n❌ {task}")
+    return ConversationHandler.END
 
 async def list_todo(update, context):
     todos = get_todos()
@@ -448,6 +457,9 @@ def main():
             CommandHandler("hapusjudul", hapus_judul),
             CommandHandler("hapustodo", hapus_todo),
             CommandHandler("checktodos", check_todos),
+            CommandHandler("catat", catat),
+            CommandHandler("catatjudul", catat_judul),
+            CommandHandler("todo", todo),
         ],
         states={
             HAPUS_REMINDER: [MessageHandler(filters.TEXT & ~filters.COMMAND, konfirmasi_hapus_reminder)],
@@ -457,6 +469,10 @@ def main():
             CHECK_TODOS: [MessageHandler(filters.TEXT & ~filters.COMMAND, konfirmasi_check_todos)],
             PILIH_HARI: [CallbackQueryHandler(pilih_hari_callback, pattern="^hari_")],
             TUNGGU_JAM_PESAN: [MessageHandler(filters.TEXT & ~filters.COMMAND, terima_jam_pesan)],
+            INPUT_CATAT: [MessageHandler(filters.TEXT & ~filters.COMMAND, terima_catat)],
+            INPUT_JUDUL: [MessageHandler(filters.TEXT & ~filters.COMMAND, terima_judul)],
+            INPUT_ISI_JUDUL: [MessageHandler(filters.TEXT & ~filters.COMMAND, terima_isi_judul)],
+            INPUT_TODO: [MessageHandler(filters.TEXT & ~filters.COMMAND, terima_todo)],
         },
         fallbacks=[CommandHandler("batal", lambda u, c: ConversationHandler.END)],
     )
@@ -465,11 +481,8 @@ def main():
     app.add_handler(CommandHandler("test", test))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("list", list_reminders))
-    app.add_handler(CommandHandler("catat", catat))
     app.add_handler(CommandHandler("lihatcatat", lihat_catat))
-    app.add_handler(CommandHandler("catatjudul", catat_judul))
     app.add_handler(CommandHandler("lihatjudul", lihat_judul))
-    app.add_handler(CommandHandler("todo", todo))
     app.add_handler(CommandHandler("listtodo", list_todo))
     setup_scheduler(app)
     logging.info("Bot berjalan...")
