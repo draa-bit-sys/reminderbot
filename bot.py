@@ -21,6 +21,8 @@ DAY_MAP = {
     "daily": "mon,tue,wed,thu,fri,sat,sun"
 }
 
+scheduler = None
+
 async def kirim_pesan(bot: Bot, chat_id: str, teks: str):
     await bot.send_message(chat_id=chat_id, text=teks)
     logging.info(f"Terkirim: {teks}")
@@ -58,6 +60,7 @@ async def tambah_reminder(update, context):
         days = args[1]
         text = " ".join(args[2:])
         add_reminder(time, days, text)
+        setup_scheduler(context.application)
         await update.message.reply_text(f"✅ Reminder ditambahkan!\n⏰ {time} | {days} | {text}")
     except Exception as e:
         await update.message.reply_text("❌ Format salah!\nGunakan: /tambah 08:00 daily Minum obat")
@@ -68,6 +71,7 @@ async def hapus_reminder(update, context):
         reminders = get_reminders()
         teks = reminders[index]['text']
         delete_reminder(index)
+        setup_scheduler(context.application)
         await update.message.reply_text(f"🗑️ Reminder '{teks}' dihapus!")
     except Exception as e:
         await update.message.reply_text("❌ Format salah!\nGunakan: /hapus 1")
@@ -91,11 +95,18 @@ daily, mon, tue, wed, thu, fri, sat, sun""",
     )
 
 def setup_scheduler(app: Application):
+    global scheduler
     tz = pytz.timezone(TIMEZONE)
-    scheduler = AsyncIOScheduler(timezone=tz)
-    bot = app.bot
 
+    if scheduler and scheduler.running:
+        scheduler.remove_all_jobs()
+    else:
+        scheduler = AsyncIOScheduler(timezone=tz)
+        scheduler.start()
+
+    bot = app.bot
     reminders = get_reminders()
+
     for r in reminders:
         jam, menit = r["time"].split(":")
         hari = DAY_MAP.get(r["days"], "mon,tue,wed,thu,fri,sat,sun")
@@ -108,7 +119,14 @@ def setup_scheduler(app: Application):
         )
         logging.info(f"Reminder terdaftar: [{r['days']} {r['time']}] {teks}")
 
-    scheduler.start()
+    # Reload otomatis tiap jam 00:01
+    scheduler.add_job(
+        setup_scheduler,
+        CronTrigger(hour=0, minute=1, timezone=tz),
+        args=[app]
+    )
+
+    logging.info(f"Scheduler diload ulang dengan {len(reminders)} reminder")
     return scheduler
 
 def main():
