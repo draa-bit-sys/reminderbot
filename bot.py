@@ -1,7 +1,7 @@
 import logging
 import os
 from telegram import Bot
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
+from telegram.ext import Application, CommandHandler
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 import pytz
@@ -28,6 +28,19 @@ async def kirim_pesan(bot: Bot, chat_id: str, teks: str):
 async def test(update, context):
     await update.message.reply_text("✅ Bot aktif dan berjalan!")
 
+async def help_command(update, context):
+    msg = """📋 *Daftar Command:*
+
+/list - Lihat semua reminder
+/tambah 08:00 daily Pesan - Tambah reminder baru
+/hapus 1 - Hapus reminder nomor 1
+/test - Cek bot aktif
+/help - Tampilkan bantuan ini
+
+*Hari yang tersedia:*
+daily, mon, tue, wed, thu, fri, sat, sun"""
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
 async def list_reminders(update, context):
     reminders = get_reminders()
     if not reminders:
@@ -40,7 +53,6 @@ async def list_reminders(update, context):
 
 async def tambah_reminder(update, context):
     try:
-        # Format: /tambah 08:00 daily Minum obat
         args = context.args
         time = args[0]
         days = args[1]
@@ -59,6 +71,24 @@ async def hapus_reminder(update, context):
         await update.message.reply_text(f"🗑️ Reminder '{teks}' dihapus!")
     except Exception as e:
         await update.message.reply_text("❌ Format salah!\nGunakan: /hapus 1")
+
+async def post_init(application: Application):
+    await application.bot.send_message(
+        chat_id=CHAT_ID,
+        text="""👋 *Bot Reminder aktif!*
+
+📋 *Daftar Command:*
+
+/list - Lihat semua reminder
+/tambah 08:00 daily Pesan - Tambah reminder baru
+/hapus 1 - Hapus reminder nomor 1
+/test - Cek bot aktif
+/help - Tampilkan bantuan ini
+
+*Hari yang tersedia:*
+daily, mon, tue, wed, thu, fri, sat, sun""",
+        parse_mode="Markdown"
+    )
 
 def setup_scheduler(app: Application):
     tz = pytz.timezone(TIMEZONE)
@@ -82,8 +112,9 @@ def setup_scheduler(app: Application):
     return scheduler
 
 def main():
-    app = Application.builder().token(TOKEN).build()
+    app = Application.builder().token(TOKEN).post_init(post_init).build()
     app.add_handler(CommandHandler("test", test))
+    app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("list", list_reminders))
     app.add_handler(CommandHandler("tambah", tambah_reminder))
     app.add_handler(CommandHandler("hapus", hapus_reminder))
@@ -93,11 +124,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-## Step 7: Tambah Variables di Railway
-
-# Buka Railway → **Variables** → tambahkan:
-# ```
-# SHEET_ID = ID_spreadsheet_kamu
-# GOOGLE_CREDS = (isi dengan isi file JSON service account, semua dalam 1 baris)
