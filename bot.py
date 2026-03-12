@@ -5,7 +5,12 @@ from telegram.ext import Application, CommandHandler
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 import pytz
-from sheets import get_reminders, add_reminder, delete_reminder
+from sheets import (
+    get_reminders, add_reminder, delete_reminder,
+    get_notes, add_note, delete_note,
+    get_titled_notes, add_titled_note, delete_titled_note,
+    get_todos, add_todo, complete_todo, delete_todo
+)
 
 # ===== CONFIG =====
 TOKEN    = os.environ.get("BOT_TOKEN")
@@ -27,22 +32,38 @@ async def kirim_pesan(bot: Bot, chat_id: str, teks: str):
     await bot.send_message(chat_id=chat_id, text=teks)
     logging.info(f"Terkirim: {teks}")
 
+# ===== GENERAL =====
 async def test(update, context):
     await update.message.reply_text("✅ Bot aktif dan berjalan!")
 
 async def help_command(update, context):
     msg = """📋 *Daftar Command:*
 
+*Reminder:*
 /list - Lihat semua reminder
-/tambah 08:00 daily Pesan - Tambah reminder baru
-/hapus 1 - Hapus reminder nomor 1
-/test - Cek bot aktif
-/help - Tampilkan bantuan ini
+/tambah 08:00 daily Pesan - Tambah reminder
+/hapus 1,2,3 - Hapus reminder
 
-*Hari yang tersedia:*
-daily, mon, tue, wed, thu, fri, sat, sun"""
+*Catatan Bebas:*
+/catat Isi catatan - Tambah catatan
+/lihatcatat - Lihat semua catatan
+/hapuscatat 1,2,3 - Hapus catatan
+
+*Catatan Judul & Isi:*
+/catatjudul Judul | Isi catatan - Tambah catatan
+/lihatjudul - Lihat semua catatan
+/hapusjudul 1,2,3 - Hapus catatan
+
+*To-Do List:*
+/todo Nama tugas - Tambah tugas
+/listtodo - Lihat semua tugas
+/selesai 1,2,3 - Tandai selesai
+/hapustodo 1,2,3 - Hapus tugas
+
+/help - Tampilkan bantuan ini"""
     await update.message.reply_text(msg, parse_mode="Markdown")
 
+# ===== REMINDER =====
 async def list_reminders(update, context):
     reminders = get_reminders()
     if not reminders:
@@ -57,54 +78,173 @@ async def tambah_reminder(update, context):
     try:
         raw = " ".join(context.args)
         items = raw.split(",")
-        added = []
+        parsed = []
 
         for item in items:
             parts = item.strip().split(" ", 2)
-            time = parts[0]
-            days = parts[1]
-            text = parts[2]
+            if len(parts) < 3:
+                await update.message.reply_text(
+                    f"❌ Format salah di: `{item.strip()}`\n"
+                    f"Gunakan: /tambah 08:00 daily Pesan , 09:00 daily Pesan",
+                    parse_mode="Markdown"
+                )
+                return
+
+            time, days, text = parts
+            valid_days = ["daily", "mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+            if days not in valid_days:
+                await update.message.reply_text(
+                    f"❌ Hari `{days}` tidak valid!\n"
+                    f"Hari yang tersedia: daily, mon, tue, wed, thu, fri, sat, sun",
+                    parse_mode="Markdown"
+                )
+                return
+
+            parsed.append((time, days, text))
+
+        for time, days, text in parsed:
             add_reminder(time, days, text)
-            added.append(f"⏰ {time} | {days} | {text}")
 
         setup_scheduler(context.application)
-        msg = "✅ Reminder ditambahkan!\n\n" + "\n".join(added)
-        await update.message.reply_text(msg)
+        added = [f"⏰ {t} | {d} | {tx}" for t, d, tx in parsed]
+        await update.message.reply_text("✅ Reminder ditambahkan!\n\n" + "\n".join(added))
+
     except Exception as e:
-        await update.message.reply_text("❌ Format salah!\nGunakan:\n/tambah 08:00 daily Minum obat , 09:00 daily Olahraga")
+        await update.message.reply_text("❌ Format salah!\nGunakan: /tambah 08:00 daily Minum obat")
 
 async def hapus_reminder(update, context):
     try:
-        indexes = [int(x.strip()) - 1 for x in " ".join(context.args).split(",")]
-        indexes_sorted = sorted(indexes, reverse=True)  # hapus dari bawah biar index tidak geser
+        indexes = sorted([int(x.strip()) - 1 for x in " ".join(context.args).split(",")], reverse=True)
         reminders = get_reminders()
         deleted = []
-
-        for index in indexes_sorted:
+        for index in indexes:
             deleted.append(reminders[index]['text'])
             delete_reminder(index)
-
         setup_scheduler(context.application)
-        msg = "🗑️ Reminder dihapus:\n\n" + "\n".join(f"- {t}" for t in deleted)
-        await update.message.reply_text(msg)
-    except Exception as e:
+        await update.message.reply_text("🗑️ Reminder dihapus:\n\n" + "\n".join(f"- {t}" for t in deleted))
+    except:
         await update.message.reply_text("❌ Format salah!\nGunakan: /hapus 1,2,3")
 
+# ===== CATATAN BEBAS =====
+async def catat(update, context):
+    try:
+        text = " ".join(context.args)
+        if not text:
+            await update.message.reply_text("❌ Catatan kosong!\nGunakan: /catat Isi catatan")
+            return
+        add_note(text)
+        await update.message.reply_text(f"📝 Catatan disimpan!\n\n{text}")
+    except:
+        await update.message.reply_text("❌ Format salah!\nGunakan: /catat Isi catatan")
+
+async def lihat_catat(update, context):
+    notes = get_notes()
+    if not notes:
+        await update.message.reply_text("Belum ada catatan.")
+        return
+    msg = "📝 *Catatan:*\n\n"
+    for i, n in enumerate(notes):
+        msg += f"{i+1}. {n['text']}\n"
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
+async def hapus_catat(update, context):
+    try:
+        indexes = sorted([int(x.strip()) - 1 for x in " ".join(context.args).split(",")], reverse=True)
+        notes = get_notes()
+        deleted = []
+        for index in indexes:
+            deleted.append(notes[index]['text'])
+            delete_note(index)
+        await update.message.reply_text("🗑️ Catatan dihapus:\n\n" + "\n".join(f"- {t}" for t in deleted))
+    except:
+        await update.message.reply_text("❌ Format salah!\nGunakan: /hapuscatat 1,2,3")
+
+# ===== CATATAN JUDUL & ISI =====
+async def catat_judul(update, context):
+    try:
+        raw = " ".join(context.args)
+        if "|" not in raw:
+            await update.message.reply_text("❌ Format salah!\nGunakan: /catatjudul Judul | Isi catatan")
+            return
+        title, content = raw.split("|", 1)
+        add_titled_note(title.strip(), content.strip())
+        await update.message.reply_text(f"📓 Catatan disimpan!\n\n*{title.strip()}*\n{content.strip()}", parse_mode="Markdown")
+    except:
+        await update.message.reply_text("❌ Format salah!\nGunakan: /catatjudul Judul | Isi catatan")
+
+async def lihat_judul(update, context):
+    notes = get_titled_notes()
+    if not notes:
+        await update.message.reply_text("Belum ada catatan.")
+        return
+    msg = "📓 *Catatan:*\n\n"
+    for i, n in enumerate(notes):
+        msg += f"{i+1}. *{n['title']}*\n{n['content']}\n\n"
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
+async def hapus_judul(update, context):
+    try:
+        indexes = sorted([int(x.strip()) - 1 for x in " ".join(context.args).split(",")], reverse=True)
+        notes = get_titled_notes()
+        deleted = []
+        for index in indexes:
+            deleted.append(notes[index]['title'])
+            delete_titled_note(index)
+        await update.message.reply_text("🗑️ Catatan dihapus:\n\n" + "\n".join(f"- {t}" for t in deleted))
+    except:
+        await update.message.reply_text("❌ Format salah!\nGunakan: /hapusjudul 1,2,3")
+
+# ===== TO-DO LIST =====
+async def todo(update, context):
+    try:
+        task = " ".join(context.args)
+        if not task:
+            await update.message.reply_text("❌ Tugas kosong!\nGunakan: /todo Nama tugas")
+            return
+        add_todo(task)
+        await update.message.reply_text(f"✅ Tugas ditambahkan!\n\n❌ {task}")
+    except:
+        await update.message.reply_text("❌ Format salah!\nGunakan: /todo Nama tugas")
+
+async def list_todo(update, context):
+    todos = get_todos()
+    if not todos:
+        await update.message.reply_text("Belum ada tugas.")
+        return
+    msg = "📌 *To-Do List:*\n\n"
+    for i, t in enumerate(todos):
+        msg += f"{i+1}. {t['status']} {t['task']}\n"
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
+async def selesai_todo(update, context):
+    try:
+        indexes = sorted([int(x.strip()) - 1 for x in " ".join(context.args).split(",")], reverse=True)
+        todos = get_todos()
+        done = []
+        for index in indexes:
+            complete_todo(index)
+            done.append(todos[index]['task'])
+        await update.message.reply_text("✅ Tugas selesai:\n\n" + "\n".join(f"- {t}" for t in done))
+    except:
+        await update.message.reply_text("❌ Format salah!\nGunakan: /selesai 1,2,3")
+
+async def hapus_todo(update, context):
+    try:
+        indexes = sorted([int(x.strip()) - 1 for x in " ".join(context.args).split(",")], reverse=True)
+        todos = get_todos()
+        deleted = []
+        for index in indexes:
+            deleted.append(todos[index]['task'])
+            delete_todo(index)
+        await update.message.reply_text("🗑️ Tugas dihapus:\n\n" + "\n".join(f"- {t}" for t in deleted))
+    except:
+        await update.message.reply_text("❌ Format salah!\nGunakan: /hapustodo 1,2,3")
+
+# ===== SCHEDULER =====
 async def post_init(application: Application):
     await application.bot.send_message(
         chat_id=CHAT_ID,
-        text="""👋 *Bot Reminder aktif!*
-
-📋 *Daftar Command:*
-
-/list - Lihat semua reminder
-/tambah 08:00 daily Pesan - Tambah reminder baru
-/hapus 1 - Hapus reminder nomor 1
-/test - Cek bot aktif
-/help - Tampilkan bantuan ini
-
-*Hari yang tersedia:*
-daily, mon, tue, wed, thu, fri, sat, sun""",
+        text="👋 *Bot aktif!* Ketik /help untuk melihat daftar command.",
         parse_mode="Markdown"
     )
 
@@ -125,7 +265,6 @@ def setup_scheduler(app: Application):
         jam, menit = r["time"].split(":")
         hari = DAY_MAP.get(r["days"], "mon,tue,wed,thu,fri,sat,sun")
         teks = r["text"]
-
         scheduler.add_job(
             kirim_pesan,
             CronTrigger(day_of_week=hari, hour=int(jam), minute=int(menit), timezone=tz),
@@ -133,7 +272,6 @@ def setup_scheduler(app: Application):
         )
         logging.info(f"Reminder terdaftar: [{r['days']} {r['time']}] {teks}")
 
-    # Reload otomatis tiap jam 00:01
     scheduler.add_job(
         setup_scheduler,
         CronTrigger(hour=0, minute=1, timezone=tz),
@@ -150,6 +288,16 @@ def main():
     app.add_handler(CommandHandler("list", list_reminders))
     app.add_handler(CommandHandler("tambah", tambah_reminder))
     app.add_handler(CommandHandler("hapus", hapus_reminder))
+    app.add_handler(CommandHandler("catat", catat))
+    app.add_handler(CommandHandler("lihatcatat", lihat_catat))
+    app.add_handler(CommandHandler("hapuscatat", hapus_catat))
+    app.add_handler(CommandHandler("catatjudul", catat_judul))
+    app.add_handler(CommandHandler("lihatjudul", lihat_judul))
+    app.add_handler(CommandHandler("hapusjudul", hapus_judul))
+    app.add_handler(CommandHandler("todo", todo))
+    app.add_handler(CommandHandler("listtodo", list_todo))
+    app.add_handler(CommandHandler("selesai", selesai_todo))
+    app.add_handler(CommandHandler("hapustodo", hapus_todo))
     setup_scheduler(app)
     logging.info("Bot berjalan...")
     app.run_polling()
