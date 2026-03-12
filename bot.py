@@ -33,9 +33,7 @@ DAY_LABELS = {
 }
 
 scheduler = None
-
-# ConversationHandler states
-PILIH_HARI, TUNGGU_JAM_PESAN = range(2)
+HAPUS_REMINDER, PILIH_HARI, TUNGGU_JAM_PESAN = range(3)
 
 async def kirim_pesan(bot: Bot, chat_id: str, teks: str):
     await bot.send_message(chat_id=chat_id, text=teks)
@@ -52,7 +50,7 @@ async def help_command(update, context):
 /list - Lihat semua reminder
 /tambah - Tambah reminder (tombol hari)
 /tambah 08:00 daily Pesan , 09:00 daily Pesan - Tambah multiple
-/hapus 1,2,3 - Hapus reminder
+/hapus - Hapus reminder
 
 *Catatan Bebas:*
 /catat Isi catatan - Tambah catatan
@@ -85,7 +83,6 @@ async def list_reminders(update, context):
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def tambah_reminder(update, context):
-    # Kalau ada args, pakai format teks
     if context.args:
         try:
             raw = " ".join(context.args)
@@ -100,7 +97,7 @@ async def tambah_reminder(update, context):
                         f"Gunakan: /tambah 08:00 daily Pesan , 09:00 daily Pesan",
                         parse_mode="Markdown"
                     )
-                    return
+                    return ConversationHandler.END
 
                 time, days, text = parts
                 valid_days = ["daily", "mon", "tue", "wed", "thu", "fri", "sat", "sun"]
@@ -110,7 +107,7 @@ async def tambah_reminder(update, context):
                         f"Hari yang tersedia: daily, mon, tue, wed, thu, fri, sat, sun",
                         parse_mode="Markdown"
                     )
-                    return
+                    return ConversationHandler.END
 
                 parsed.append((time, days, text))
 
@@ -125,7 +122,6 @@ async def tambah_reminder(update, context):
             await update.message.reply_text("❌ Format salah!\nGunakan: /tambah 08:00 daily Minum obat")
         return ConversationHandler.END
 
-    # Kalau tidak ada args, tampilkan tombol hari
     keyboard = [
         [InlineKeyboardButton("Setiap Hari", callback_data="hari_daily")],
         [
@@ -178,17 +174,29 @@ async def terima_jam_pesan(update, context):
         add_reminder(time, hari, pesan)
         setup_scheduler(context.application)
 
-        await update.message.reply_text(
-            f"✅ Reminder ditambahkan!\n\n⏰ {time} | {label} | {pesan}"
-        )
+        await update.message.reply_text(f"✅ Reminder ditambahkan!\n\n⏰ {time} | {label} | {pesan}")
     except Exception as e:
         await update.message.reply_text("❌ Terjadi error, coba lagi.")
 
     return ConversationHandler.END
 
 async def hapus_reminder(update, context):
+    reminders = get_reminders()
+    if not reminders:
+        await update.message.reply_text("Belum ada reminder.")
+        return ConversationHandler.END
+
+    msg = "🗑️ *Hapus Reminder*\n\nPilih nomor yang mau dihapus:\n\n"
+    for i, r in enumerate(reminders):
+        msg += f"{i+1}. `{r['time']}` | `{r['days']}` | {r['text']}\n"
+    msg += "\nBalas dengan nomor: `1` atau `1,2,3`"
+
+    await update.message.reply_text(msg, parse_mode="Markdown")
+    return HAPUS_REMINDER
+
+async def konfirmasi_hapus_reminder(update, context):
     try:
-        indexes = sorted([int(x.strip()) - 1 for x in " ".join(context.args).split(",")], reverse=True)
+        indexes = sorted([int(x.strip()) - 1 for x in update.message.text.split(",")], reverse=True)
         reminders = get_reminders()
         deleted = []
         for index in indexes:
@@ -197,7 +205,8 @@ async def hapus_reminder(update, context):
         setup_scheduler(context.application)
         await update.message.reply_text("🗑️ Reminder dihapus:\n\n" + "\n".join(f"- {t}" for t in deleted))
     except:
-        await update.message.reply_text("❌ Format salah!\nGunakan: /hapus 1,2,3")
+        await update.message.reply_text("❌ Format salah!\nKirim nomor seperti: `1` atau `1,2,3`", parse_mode="Markdown")
+    return ConversationHandler.END
 
 # ===== CATATAN BEBAS =====
 async def catat(update, context):
@@ -361,10 +370,13 @@ def setup_scheduler(app: Application):
 def main():
     app = Application.builder().token(TOKEN).post_init(post_init).build()
 
-    # ConversationHandler untuk /tambah dengan tombol
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("tambah", tambah_reminder)],
+        entry_points=[
+            CommandHandler("tambah", tambah_reminder),
+            CommandHandler("hapus", hapus_reminder),
+        ],
         states={
+            HAPUS_REMINDER: [MessageHandler(filters.TEXT & ~filters.COMMAND, konfirmasi_hapus_reminder)],
             PILIH_HARI: [CallbackQueryHandler(pilih_hari_callback, pattern="^hari_")],
             TUNGGU_JAM_PESAN: [MessageHandler(filters.TEXT & ~filters.COMMAND, terima_jam_pesan)],
         },
@@ -375,7 +387,6 @@ def main():
     app.add_handler(CommandHandler("test", test))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("list", list_reminders))
-    app.add_handler(CommandHandler("hapus", hapus_reminder))
     app.add_handler(CommandHandler("catat", catat))
     app.add_handler(CommandHandler("lihatcatat", lihat_catat))
     app.add_handler(CommandHandler("hapuscatat", hapus_catat))
