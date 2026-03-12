@@ -6,10 +6,10 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 import pytz
 from sheets import (
-    get_reminders, add_reminder, delete_reminder,
-    get_notes, add_note, delete_note,
-    get_titled_notes, add_titled_note, delete_titled_note,
-    get_todos, add_todo, complete_todo, delete_todo
+    get_reminders, add_reminder, delete_reminder, edit_reminder,
+    get_notes, add_note, delete_note, edit_note,
+    get_titled_notes, add_titled_note, delete_titled_note, edit_titled_note,
+    get_todos, add_todo, complete_todo, delete_todo, edit_todo
 )
 
 # ===== CONFIG =====
@@ -47,7 +47,11 @@ scheduler = None
     INPUT_JUDUL,
     INPUT_ISI_JUDUL,
     INPUT_TODO,
-) = range(11)
+    EDIT_PILIH_NOMOR,
+    EDIT_PILIH_FIELD,
+    EDIT_PILIH_HARI,
+    EDIT_INPUT_NILAI,
+) = range(15)
 
 async def kirim_pesan(bot: Bot, chat_id: str, teks: str):
     await bot.send_message(chat_id=chat_id, text=teks)
@@ -65,6 +69,7 @@ async def help_command(update, context):
 /tambah - Tambah reminder (tombol hari)
 /tambah 08:00 daily Pesan , 09:00 daily Pesan - Tambah multiple
 /hapus - Hapus reminder
+/edit - Edit data
 
 *Catatan Bebas:*
 /catat - Tambah catatan
@@ -402,6 +407,201 @@ async def konfirmasi_hapus_todo(update, context):
         await update.message.reply_text("❌ Format salah!\nKirim nomor seperti: `1` atau `1,2,3`", parse_mode="Markdown")
     return ConversationHandler.END
 
+# ===== EDIT =====
+async def edit(update, context):
+    keyboard = [
+        [
+            InlineKeyboardButton("📅 Reminder", callback_data="edit_reminder"),
+            InlineKeyboardButton("📝 Catatan", callback_data="edit_catat"),
+        ],
+        [
+            InlineKeyboardButton("📓 Catatan Judul", callback_data="edit_judul"),
+            InlineKeyboardButton("📌 To-Do", callback_data="edit_todo"),
+        ],
+        [InlineKeyboardButton("❌ Batal", callback_data="edit_batal")]
+    ]
+    await update.message.reply_text("✏️ *Edit apa?*", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    return EDIT_PILIH_NOMOR
+
+async def edit_pilih_kategori(update, context):
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "edit_batal":
+        await query.edit_message_text("❌ Dibatalkan.")
+        return ConversationHandler.END
+
+    kategori = query.data.replace("edit_", "")
+    context.user_data["edit_kategori"] = kategori
+
+    if kategori == "reminder":
+        data = get_reminders()
+        if not data:
+            await query.edit_message_text("Belum ada reminder.")
+            return ConversationHandler.END
+        msg = "📅 *Pilih nomor reminder yang mau diedit:*\n\n"
+        for i, r in enumerate(data):
+            msg += f"{i+1}. `{r['time']}` | `{r['days']}` | {r['text']}\n"
+
+    elif kategori == "catat":
+        data = get_notes()
+        if not data:
+            await query.edit_message_text("Belum ada catatan.")
+            return ConversationHandler.END
+        msg = "📝 *Pilih nomor catatan yang mau diedit:*\n\n"
+        for i, n in enumerate(data):
+            msg += f"{i+1}. {n['text']}\n"
+
+    elif kategori == "judul":
+        data = get_titled_notes()
+        if not data:
+            await query.edit_message_text("Belum ada catatan judul.")
+            return ConversationHandler.END
+        msg = "📓 *Pilih nomor catatan yang mau diedit:*\n\n"
+        for i, n in enumerate(data):
+            msg += f"{i+1}. *{n['title']}* — {n['content'][:30]}...\n"
+
+    elif kategori == "todo":
+        data = get_todos()
+        if not data:
+            await query.edit_message_text("Belum ada tugas.")
+            return ConversationHandler.END
+        msg = "📌 *Pilih nomor tugas yang mau diedit:*\n\n"
+        for i, t in enumerate(data):
+            msg += f"{i+1}. {t['status']} {t['task']}\n"
+
+    msg += "\nKetik nomornya:"
+    await query.edit_message_text(msg, parse_mode="Markdown")
+    return EDIT_PILIH_FIELD
+
+async def edit_pilih_nomor(update, context):
+    try:
+        index = int(update.message.text.strip()) - 1
+        context.user_data["edit_index"] = index
+        kategori = context.user_data["edit_kategori"]
+
+        if kategori == "reminder":
+            keyboard = [
+                [
+                    InlineKeyboardButton("⏰ Jam", callback_data="editfield_time"),
+                    InlineKeyboardButton("📅 Hari", callback_data="editfield_days"),
+                    InlineKeyboardButton("💬 Pesan", callback_data="editfield_text"),
+                ],
+                [InlineKeyboardButton("❌ Batal", callback_data="editfield_batal")]
+            ]
+            await update.message.reply_text("✏️ Edit apa?", reply_markup=InlineKeyboardMarkup(keyboard))
+            return EDIT_PILIH_FIELD
+
+        elif kategori == "judul":
+            keyboard = [
+                [
+                    InlineKeyboardButton("📌 Judul", callback_data="editfield_title"),
+                    InlineKeyboardButton("📝 Isi", callback_data="editfield_content"),
+                ],
+                [InlineKeyboardButton("❌ Batal", callback_data="editfield_batal")]
+            ]
+            await update.message.reply_text("✏️ Edit apa?", reply_markup=InlineKeyboardMarkup(keyboard))
+            return EDIT_PILIH_FIELD
+
+        else:
+            # catatan bebas & todo langsung input nilai baru
+            if kategori == "catat":
+                data = get_notes()
+                await update.message.reply_text(f"✏️ Nilai lama: `{data[index]['text']}`\n\nKetik nilai baru:", parse_mode="Markdown")
+            elif kategori == "todo":
+                data = get_todos()
+                await update.message.reply_text(f"✏️ Nilai lama: `{data[index]['task']}`\n\nKetik nilai baru:", parse_mode="Markdown")
+            context.user_data["edit_field"] = "value"
+            return EDIT_INPUT_NILAI
+
+    except:
+        await update.message.reply_text("❌ Nomor tidak valid, coba lagi:")
+        return EDIT_PILIH_FIELD
+
+async def edit_pilih_field(update, context):
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "editfield_batal":
+        await query.edit_message_text("❌ Dibatalkan.")
+        return ConversationHandler.END
+
+    field = query.data.replace("editfield_", "")
+    context.user_data["edit_field"] = field
+    kategori = context.user_data["edit_kategori"]
+    index = context.user_data["edit_index"]
+
+    if field == "days":
+        # Tampilkan tombol pilih hari
+        keyboard = [
+            [InlineKeyboardButton("Setiap Hari", callback_data="edithari_daily")],
+            [
+                InlineKeyboardButton("Senin", callback_data="edithari_mon"),
+                InlineKeyboardButton("Selasa", callback_data="edithari_tue"),
+                InlineKeyboardButton("Rabu", callback_data="edithari_wed"),
+                InlineKeyboardButton("Kamis", callback_data="edithari_thu"),
+            ],
+            [
+                InlineKeyboardButton("Jumat", callback_data="edithari_fri"),
+                InlineKeyboardButton("Sabtu", callback_data="edithari_sat"),
+                InlineKeyboardButton("Minggu", callback_data="edithari_sun"),
+            ],
+        ]
+        await query.edit_message_text("📅 Pilih hari baru:", reply_markup=InlineKeyboardMarkup(keyboard))
+        return EDIT_PILIH_HARI
+
+    # Tampilkan nilai lama
+    if kategori == "reminder":
+        data = get_reminders()[index]
+        nilai_lama = data[field] if field in data else "-"
+    elif kategori == "judul":
+        data = get_titled_notes()[index]
+        nilai_lama = data["title"] if field == "title" else data["content"]
+    else:
+        nilai_lama = "-"
+
+    await query.edit_message_text(f"✏️ Nilai lama: `{nilai_lama}`\n\nKetik nilai baru:", parse_mode="Markdown")
+    return EDIT_INPUT_NILAI
+
+async def edit_pilih_hari_baru(update, context):
+    query = update.callback_query
+    await query.answer()
+
+    hari = query.data.replace("edithari_", "")
+    index = context.user_data["edit_index"]
+    label = DAY_LABELS.get(hari, hari)
+
+    edit_reminder(index, "days", hari)
+    await query.edit_message_text(f"✅ Hari reminder diupdate ke *{label}*!", parse_mode="Markdown")
+    return ConversationHandler.END
+
+async def edit_input_nilai(update, context):
+    try:
+        nilai_baru = update.message.text.strip()
+        kategori = context.user_data["edit_kategori"]
+        field = context.user_data["edit_field"]
+        index = context.user_data["edit_index"]
+
+        if kategori == "reminder":
+            edit_reminder(index, field, nilai_baru)
+            await update.message.reply_text(f"✅ Reminder diupdate!")
+
+        elif kategori == "catat":
+            edit_note(index, nilai_baru)
+            await update.message.reply_text(f"✅ Catatan diupdate!\n\n{nilai_baru}")
+
+        elif kategori == "judul":
+            edit_titled_note(index, field, nilai_baru)
+            await update.message.reply_text(f"✅ Catatan diupdate!")
+
+        elif kategori == "todo":
+            edit_todo(index, nilai_baru)
+            await update.message.reply_text(f"✅ Tugas diupdate!\n\n{nilai_baru}")
+
+    except Exception as e:
+        await update.message.reply_text("❌ Terjadi error, coba lagi.")
+    return ConversationHandler.END
+
 # ===== SCHEDULER =====
 async def post_init(application: Application):
     await application.bot.send_message(
@@ -460,6 +660,7 @@ def main():
             CommandHandler("catat", catat),
             CommandHandler("catatjudul", catat_judul),
             CommandHandler("todo", todo),
+            CommandHandler("edit", edit),
         ],
         states={
             HAPUS_REMINDER: [MessageHandler(filters.TEXT & ~filters.COMMAND, konfirmasi_hapus_reminder)],
@@ -473,6 +674,13 @@ def main():
             INPUT_JUDUL: [MessageHandler(filters.TEXT & ~filters.COMMAND, terima_judul)],
             INPUT_ISI_JUDUL: [MessageHandler(filters.TEXT & ~filters.COMMAND, terima_isi_judul)],
             INPUT_TODO: [MessageHandler(filters.TEXT & ~filters.COMMAND, terima_todo)],
+            EDIT_PILIH_NOMOR: [CallbackQueryHandler(edit_pilih_kategori, pattern="^edit_")],
+            EDIT_PILIH_FIELD: [
+                CallbackQueryHandler(edit_pilih_field, pattern="^editfield_"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, edit_pilih_nomor),
+            ],
+            EDIT_PILIH_HARI: [CallbackQueryHandler(edit_pilih_hari_baru, pattern="^edithari_")],
+            EDIT_INPUT_NILAI: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_input_nilai)],
         },
         fallbacks=[CommandHandler("batal", lambda u, c: ConversationHandler.END)],
     )

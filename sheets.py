@@ -61,3 +61,20 @@ def complete_todo(index):
 
 def delete_todo(index):
     get_sheet("todos").delete_rows(index + 2)
+
+# ===== EDIT =====
+def edit_reminder(index, field, value):
+    sheet = get_sheet("reminders")
+    col = {"time": 1, "days": 2, "text": 3}[field]
+    sheet.update_cell(index + 2, col, value)
+
+def edit_note(index, value):
+    get_sheet("notes").update_cell(index + 2, 1, value)
+
+def edit_titled_note(index, field, value):
+    sheet = get_sheet("titled_notes")
+    col = {"title": 1, "content": 2}[field]
+    sheet.update_cell(index + 2, col, value)
+
+def edit_todo(index, value):
+    get_sheet("todos").update_cell(index + 2, 1, value)
