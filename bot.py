@@ -1,7 +1,7 @@
 import logging
 import os
-from telegram import Bot
-from telegram.ext import Application, CommandHandler
+from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ConversationHandler
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 import pytz
@@ -26,7 +26,16 @@ DAY_MAP = {
     "daily": "mon,tue,wed,thu,fri,sat,sun"
 }
 
+DAY_LABELS = {
+    "daily": "Setiap Hari",
+    "mon": "Senin", "tue": "Selasa", "wed": "Rabu",
+    "thu": "Kamis", "fri": "Jumat", "sat": "Sabtu", "sun": "Minggu"
+}
+
 scheduler = None
+
+# ConversationHandler states
+PILIH_HARI, TUNGGU_JAM_PESAN = range(2)
 
 async def kirim_pesan(bot: Bot, chat_id: str, teks: str):
     await bot.send_message(chat_id=chat_id, text=teks)
@@ -41,7 +50,8 @@ async def help_command(update, context):
 
 *Reminder:*
 /list - Lihat semua reminder
-/tambah 08:00 daily Pesan - Tambah reminder
+/tambah - Tambah reminder (tombol hari)
+/tambah 08:00 daily Pesan , 09:00 daily Pesan - Tambah multiple
 /hapus 1,2,3 - Hapus reminder
 
 *Catatan Bebas:*
@@ -75,42 +85,106 @@ async def list_reminders(update, context):
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def tambah_reminder(update, context):
+    # Kalau ada args, pakai format teks
+    if context.args:
+        try:
+            raw = " ".join(context.args)
+            items = raw.split(",")
+            parsed = []
+
+            for item in items:
+                parts = item.strip().split(" ", 2)
+                if len(parts) < 3:
+                    await update.message.reply_text(
+                        f"❌ Format salah di: `{item.strip()}`\n"
+                        f"Gunakan: /tambah 08:00 daily Pesan , 09:00 daily Pesan",
+                        parse_mode="Markdown"
+                    )
+                    return
+
+                time, days, text = parts
+                valid_days = ["daily", "mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+                if days not in valid_days:
+                    await update.message.reply_text(
+                        f"❌ Hari `{days}` tidak valid!\n"
+                        f"Hari yang tersedia: daily, mon, tue, wed, thu, fri, sat, sun",
+                        parse_mode="Markdown"
+                    )
+                    return
+
+                parsed.append((time, days, text))
+
+            for time, days, text in parsed:
+                add_reminder(time, days, text)
+
+            setup_scheduler(context.application)
+            added = [f"⏰ {t} | {d} | {tx}" for t, d, tx in parsed]
+            await update.message.reply_text("✅ Reminder ditambahkan!\n\n" + "\n".join(added))
+
+        except Exception as e:
+            await update.message.reply_text("❌ Format salah!\nGunakan: /tambah 08:00 daily Minum obat")
+        return ConversationHandler.END
+
+    # Kalau tidak ada args, tampilkan tombol hari
+    keyboard = [
+        [InlineKeyboardButton("Setiap Hari", callback_data="hari_daily")],
+        [
+            InlineKeyboardButton("Senin", callback_data="hari_mon"),
+            InlineKeyboardButton("Selasa", callback_data="hari_tue"),
+            InlineKeyboardButton("Rabu", callback_data="hari_wed"),
+            InlineKeyboardButton("Kamis", callback_data="hari_thu"),
+        ],
+        [
+            InlineKeyboardButton("Jumat", callback_data="hari_fri"),
+            InlineKeyboardButton("Sabtu", callback_data="hari_sat"),
+            InlineKeyboardButton("Minggu", callback_data="hari_sun"),
+        ],
+        [InlineKeyboardButton("❌ Batal", callback_data="hari_batal")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("📅 Pilih hari:", reply_markup=reply_markup)
+    return PILIH_HARI
+
+async def pilih_hari_callback(update, context):
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "hari_batal":
+        await query.edit_message_text("❌ Dibatalkan.")
+        return ConversationHandler.END
+
+    hari = query.data.replace("hari_", "")
+    context.user_data["hari"] = hari
+    label = DAY_LABELS.get(hari, hari)
+
+    await query.edit_message_text(
+        f"✅ Hari dipilih: *{label}*\n\nSekarang kirim jam dan pesan:\nFormat: `08:00 Minum obat`",
+        parse_mode="Markdown"
+    )
+    return TUNGGU_JAM_PESAN
+
+async def terima_jam_pesan(update, context):
     try:
-        raw = " ".join(context.args)
-        items = raw.split(",")
-        parsed = []
+        text = update.message.text.strip()
+        parts = text.split(" ", 1)
+        if len(parts) < 2:
+            await update.message.reply_text("❌ Format salah!\nKirim: `08:00 Minum obat`", parse_mode="Markdown")
+            return TUNGGU_JAM_PESAN
 
-        for item in items:
-            parts = item.strip().split(" ", 2)
-            if len(parts) < 3:
-                await update.message.reply_text(
-                    f"❌ Format salah di: `{item.strip()}`\n"
-                    f"Gunakan: /tambah 08:00 daily Pesan , 09:00 daily Pesan",
-                    parse_mode="Markdown"
-                )
-                return
+        time, pesan = parts
+        hari = context.user_data.get("hari")
+        label = DAY_LABELS.get(hari, hari)
 
-            time, days, text = parts
-            valid_days = ["daily", "mon", "tue", "wed", "thu", "fri", "sat", "sun"]
-            if days not in valid_days:
-                await update.message.reply_text(
-                    f"❌ Hari `{days}` tidak valid!\n"
-                    f"Hari yang tersedia: daily, mon, tue, wed, thu, fri, sat, sun",
-                    parse_mode="Markdown"
-                )
-                return
-
-            parsed.append((time, days, text))
-
-        for time, days, text in parsed:
-            add_reminder(time, days, text)
-
+        add_reminder(time, hari, pesan)
         setup_scheduler(context.application)
-        added = [f"⏰ {t} | {d} | {tx}" for t, d, tx in parsed]
-        await update.message.reply_text("✅ Reminder ditambahkan!\n\n" + "\n".join(added))
 
+        await update.message.reply_text(
+            f"✅ Reminder ditambahkan!\n\n⏰ {time} | {label} | {pesan}"
+        )
     except Exception as e:
-        await update.message.reply_text("❌ Format salah!\nGunakan: /tambah 08:00 daily Minum obat")
+        await update.message.reply_text("❌ Terjadi error, coba lagi.")
+
+    return ConversationHandler.END
 
 async def hapus_reminder(update, context):
     try:
@@ -262,15 +336,18 @@ def setup_scheduler(app: Application):
     reminders = get_reminders()
 
     for r in reminders:
-        jam, menit = r["time"].split(":")
-        hari = DAY_MAP.get(r["days"], "mon,tue,wed,thu,fri,sat,sun")
-        teks = r["text"]
-        scheduler.add_job(
-            kirim_pesan,
-            CronTrigger(day_of_week=hari, hour=int(jam), minute=int(menit), timezone=tz),
-            args=[bot, CHAT_ID, teks]
-        )
-        logging.info(f"Reminder terdaftar: [{r['days']} {r['time']}] {teks}")
+        try:
+            jam, menit = r["time"].split(":")
+            hari = DAY_MAP.get(r["days"], "mon,tue,wed,thu,fri,sat,sun")
+            teks = r["text"]
+            scheduler.add_job(
+                kirim_pesan,
+                CronTrigger(day_of_week=hari, hour=int(jam), minute=int(menit), timezone=tz),
+                args=[bot, CHAT_ID, teks]
+            )
+            logging.info(f"Reminder terdaftar: [{r['days']} {r['time']}] {teks}")
+        except Exception as e:
+            logging.error(f"Skip reminder error: {r} — {e}")
 
     scheduler.add_job(
         setup_scheduler,
@@ -283,10 +360,21 @@ def setup_scheduler(app: Application):
 
 def main():
     app = Application.builder().token(TOKEN).post_init(post_init).build()
+
+    # ConversationHandler untuk /tambah dengan tombol
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("tambah", tambah_reminder)],
+        states={
+            PILIH_HARI: [CallbackQueryHandler(pilih_hari_callback, pattern="^hari_")],
+            TUNGGU_JAM_PESAN: [MessageHandler(filters.TEXT & ~filters.COMMAND, terima_jam_pesan)],
+        },
+        fallbacks=[CommandHandler("batal", lambda u, c: ConversationHandler.END)],
+    )
+
+    app.add_handler(conv_handler)
     app.add_handler(CommandHandler("test", test))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("list", list_reminders))
-    app.add_handler(CommandHandler("tambah", tambah_reminder))
     app.add_handler(CommandHandler("hapus", hapus_reminder))
     app.add_handler(CommandHandler("catat", catat))
     app.add_handler(CommandHandler("lihatcatat", lihat_catat))
