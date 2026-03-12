@@ -648,31 +648,34 @@ def main():
     app = Application.builder().token(TOKEN).post_init(post_init).build()
 
     conv_handler = ConversationHandler(
-        entry_points=[
-            CommandHandler("tambah", tambah),
-            CommandHandler("hapus", hapus),
-            CommandHandler("edit", edit),
-            CommandHandler("checktodos", check_todos),
-        ],
-        states={
-            TAMBAH_PILIH_KATEGORI: [CallbackQueryHandler(tambah_pilih_kategori, pattern="^tambah_")],
-            TAMBAH_PILIH_HARI: [CallbackQueryHandler(tambah_pilih_hari, pattern="^tambahhari_")],
-            TAMBAH_JAM_PESAN: [MessageHandler(filters.TEXT & ~filters.COMMAND, tambah_jam_pesan)],
-            TAMBAH_INPUT_CATAT: [MessageHandler(filters.TEXT & ~filters.COMMAND, tambah_terima_catat)],
-            TAMBAH_INPUT_JUDUL: [MessageHandler(filters.TEXT & ~filters.COMMAND, tambah_terima_judul)],
-            TAMBAH_INPUT_ISI_JUDUL: [MessageHandler(filters.TEXT & ~filters.COMMAND, tambah_terima_isi_judul)],
-            TAMBAH_INPUT_TODO: [MessageHandler(filters.TEXT & ~filters.COMMAND, tambah_terima_todo)],
-            HAPUS_PILIH_KATEGORI: [CallbackQueryHandler(hapus_pilih_kategori, pattern="^hapus_")],
-            HAPUS_PILIH_NOMOR: [MessageHandler(filters.TEXT & ~filters.COMMAND, hapus_pilih_nomor)],
-            EDIT_PILIH_KATEGORI: [CallbackQueryHandler(edit_pilih_kategori, pattern="^edit_")],
-            EDIT_PILIH_NOMOR: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_pilih_nomor)],
-            EDIT_PILIH_FIELD: [CallbackQueryHandler(edit_pilih_field, pattern="^editfield_")],
-            EDIT_PILIH_HARI: [CallbackQueryHandler(edit_pilih_hari_baru, pattern="^edithari_")],
-            EDIT_INPUT_NILAI: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_input_nilai)],
-            CHECK_TODOS: [MessageHandler(filters.TEXT & ~filters.COMMAND, konfirmasi_check_todos)],
-        },
-        fallbacks=[CommandHandler("batal", batal)],
-    )
+    entry_points=[
+        CommandHandler("tambah", tambah),
+        CommandHandler("hapus", hapus),
+        CommandHandler("edit", edit),
+        CommandHandler("checktodos", check_todos),
+    ],
+    states={
+        TAMBAH_PILIH_KATEGORI: [CallbackQueryHandler(tambah_pilih_kategori, pattern="^tambah_")],
+        TAMBAH_PILIH_HARI: [CallbackQueryHandler(tambah_pilih_hari, pattern="^tambahhari_")],
+        TAMBAH_JAM_PESAN: [MessageHandler(filters.TEXT & ~filters.COMMAND, tambah_jam_pesan)],
+        TAMBAH_INPUT_CATAT: [MessageHandler(filters.TEXT & ~filters.COMMAND, tambah_terima_catat)],
+        TAMBAH_INPUT_JUDUL: [MessageHandler(filters.TEXT & ~filters.COMMAND, tambah_terima_judul)],
+        TAMBAH_INPUT_ISI_JUDUL: [MessageHandler(filters.TEXT & ~filters.COMMAND, tambah_terima_isi_judul)],
+        TAMBAH_INPUT_TODO: [MessageHandler(filters.TEXT & ~filters.COMMAND, tambah_terima_todo)],
+        HAPUS_PILIH_KATEGORI: [CallbackQueryHandler(hapus_pilih_kategori, pattern="^hapus_")],
+        HAPUS_PILIH_NOMOR: [MessageHandler(filters.TEXT & ~filters.COMMAND, hapus_pilih_nomor)],
+        EDIT_PILIH_KATEGORI: [CallbackQueryHandler(edit_pilih_kategori, pattern="^edit_")],
+        EDIT_PILIH_NOMOR: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_pilih_nomor)],
+        EDIT_PILIH_FIELD: [CallbackQueryHandler(edit_pilih_field, pattern="^editfield_")],
+        EDIT_PILIH_HARI: [CallbackQueryHandler(edit_pilih_hari_baru, pattern="^edithari_")],
+        EDIT_INPUT_NILAI: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_input_nilai)],
+        CHECK_TODOS: [MessageHandler(filters.TEXT & ~filters.COMMAND, konfirmasi_check_todos)],
+    },
+    fallbacks=[CommandHandler("batal", batal)],
+    per_message=False,
+    per_chat=True,
+    conversation_timeout=60,
+)
 
     app.add_handler(conv_handler)
     app.add_handler(CommandHandler("test", test))
