@@ -1,5 +1,5 @@
 [phases.install]
-cmds = ["pip install -r requirements.txt"]
+cmds = ["pip install python-telegram-bot==20.7 APScheduler==3.10.4 pytz tzlocal"]
 
 [start]
 cmd = "python bot.py"
