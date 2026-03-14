@@ -11,6 +11,7 @@ from sheets import (
     get_titled_notes, add_titled_note, delete_titled_note, delete_titled_notes_batch, edit_titled_note,
     get_todos, add_todo, complete_todo, complete_todos_batch, delete_todo, delete_todos_batch, edit_todo
 )
+from nlp import parse_pesan
 
 # ===== CONFIG =====
 TOKEN    = os.environ.get("BOT_TOKEN")
@@ -84,7 +85,12 @@ async def help_command(update, context):
 /checktodos - Tandai tugas selesai
 
 /help - Tampilkan bantuan ini
-/batal - Batalkan aksi saat ini"""
+/batal - Batalkan aksi saat ini
+
+💬 *Atau langsung ketik perintah natural:*
+_"Ingatkan aku jam 8 minum obat"_
+_"Tambah todo beli susu"_
+_"Lihat reminder aku"_"""
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 # ===== LIHAT =====
@@ -587,6 +593,65 @@ async def konfirmasi_check_todos(update, context):
         await update.message.reply_text("❌ Format salah!\nKetik nomor: `1` atau `1,2,3`", parse_mode="Markdown")
     return ConversationHandler.END
 
+# ===== NLP =====
+async def handle_nlp(update, context):
+    pesan = update.message.text.strip()
+    result = parse_pesan(pesan)
+    action = result.get("action")
+
+    if action == "tambah_reminder":
+        add_reminder(result["time"], result["days"], result["text"])
+        setup_scheduler(context.application)
+        await update.message.reply_text(f"✅ Reminder ditambahkan!\n\n⏰ {result['time']} | {result['days']} | {result['text']}")
+
+    elif action == "hapus_reminder":
+        data = get_reminders()
+        index = result["index"] - 1
+        delete_reminder(index)
+        setup_scheduler(context.application)
+        await update.message.reply_text("🗑️ Reminder dihapus!")
+
+    elif action == "tambah_catatan":
+        add_note(result["text"])
+        await update.message.reply_text(f"✅ Catatan disimpan!\n\n{result['text']}")
+
+    elif action == "tambah_todo":
+        add_todo(result["task"])
+        await update.message.reply_text(f"✅ Tugas ditambahkan!\n\n❌ {result['task']}")
+
+    elif action == "lihat_reminder":
+        reminders = get_reminders()
+        if not reminders:
+            await update.message.reply_text("Belum ada reminder.")
+            return
+        msg = "📋 *Daftar Reminder:*\n\n"
+        for i, r in enumerate(reminders):
+            msg += f"{i+1}. `{r['time']}` | `{r['days']}` | {r['text']}\n"
+        await update.message.reply_text(msg, parse_mode="Markdown")
+
+    elif action == "lihat_catatan":
+        notes = get_notes()
+        if not notes:
+            await update.message.reply_text("Belum ada catatan.")
+            return
+        msg = "📝 *Catatan:*\n\n"
+        for i, n in enumerate(notes):
+            msg += f"{i+1}. {n['text']}\n"
+        await update.message.reply_text(msg, parse_mode="Markdown")
+
+    elif action == "lihat_todo":
+        todos = get_todos()
+        if not todos:
+            await update.message.reply_text("Belum ada tugas.")
+            return
+        msg = "📌 *To-Do List:*\n\n"
+        for i, t in enumerate(todos):
+            msg += f"{i+1}. {t['status']} {t['task']}\n"
+        await update.message.reply_text(msg, parse_mode="Markdown")
+
+    elif action == "tidak_dikenal":
+        await update.message.reply_text(result.get("reply", "Maaf, gw gak ngerti. Coba /help!"))
+
 # ===== SCHEDULER =====
 async def post_init(application: Application):
     await application.bot.send_message(
@@ -671,6 +736,7 @@ def main():
     app.add_handler(CommandHandler("lihatcatat", lihat_catat))
     app.add_handler(CommandHandler("lihatjudul", lihat_judul))
     app.add_handler(CommandHandler("listtodo", list_todo))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_nlp))
     setup_scheduler(app)
     logging.info("Bot berjalan...")
     app.run_polling()
