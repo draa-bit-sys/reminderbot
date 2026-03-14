@@ -1,7 +1,6 @@
 python-telegram-bot==21.9
-apscheduler==3.10.4
-gspread==6.1.2
-google-auth==2.29.0
-pytz==2024.1
-tzlocal==5.2
-google-genai
+APScheduler==3.10.4
+pytz
+tzlocal
+gspread
+google-auth
