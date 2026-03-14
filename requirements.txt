@@ -4,4 +4,4 @@ gspread==6.1.2
 google-auth==2.29.0
 pytz==2024.1
 tzlocal==5.2
-google-generativeai
+google-genai

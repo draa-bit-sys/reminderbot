@@ -1,9 +1,8 @@
-import google.generativeai as genai
+from google import genai
 import os
 import json
 
-genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
-model = genai.GenerativeModel("gemini-1.5-flash")
+client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 
 SYSTEM_PROMPT = """
 Kamu adalah asisten bot Telegram pribadi. Tugasmu adalah menganalisis pesan pengguna dan mengubahnya menjadi perintah JSON.
@@ -19,27 +18,19 @@ Perintah yang tersedia:
 - tidak_dikenal: {"action": "tidak_dikenal", "reply": "jawaban natural kamu"}
 
 Aturan:
-- Balas HANYA dengan JSON, tanpa teks lain
+- Balas HANYA dengan JSON, tanpa teks lain, tanpa markdown
 - Jika pesan tidak jelas, gunakan action "tidak_dikenal" dan isi reply dengan jawaban natural
 - Untuk hari: daily=setiap hari, mon=senin, tue=selasa, wed=rabu, thu=kamis, fri=jumat, sat=sabtu, sun=minggu
 - Format waktu selalu HH:MM
-
-Contoh:
-User: "ingatkan aku jam 8 pagi setiap hari minum obat"
-{"action": "tambah_reminder", "time": "08:00", "days": "daily", "text": "Minum obat"}
-
-User: "tambah todo beli susu"
-{"action": "tambah_todo", "task": "Beli susu"}
-
-User: "lihat reminder aku"
-{"action": "lihat_reminder"}
 """
 
 def parse_pesan(pesan: str) -> dict:
     try:
-        response = model.generate_content(SYSTEM_PROMPT + f"\n\nUser: {pesan}")
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=SYSTEM_PROMPT + f"\n\nUser: {pesan}"
+        )
         text = response.text.strip()
-        # Bersihkan markdown kalau ada
         text = text.replace("```json", "").replace("```", "").strip()
         return json.loads(text)
     except Exception as e:
