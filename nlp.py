@@ -26,10 +26,10 @@ Aturan:
 
 def parse_pesan(pesan: str) -> dict:
     try:
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=SYSTEM_PROMPT + f"\n\nUser: {pesan}"
-        )
+       response = client.models.generate_content(
+    model="gemini-2.0-flash-lite",
+    contents=SYSTEM_PROMPT + f"\n\nUser: {pesan}"
+)
         text = response.text.strip()
         text = text.replace("```json", "").replace("```", "").strip()
         return json.loads(text)
