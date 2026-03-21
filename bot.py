@@ -760,6 +760,7 @@ async def kirim_pilih_member(update, context):
 async def handle_konfirmasi(update, context):
     query = update.callback_query
     await query.answer()
+    logging.info(f"handle_konfirmasi dipanggil: {query.data}")
     chat_id = str(query.from_user.id)
     action, konfirmasi_id = query.data.replace("konfirmasi_", "").split("_", 1)
     konfirmasi_id = int(konfirmasi_id)
