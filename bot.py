@@ -11,7 +11,7 @@ from db import (
     get_titled_notes, add_titled_note, delete_titled_note, delete_titled_notes_batch, edit_titled_note,
     get_todos, add_todo, complete_todo, complete_todos_batch, delete_todo, delete_todos_batch, edit_todo,
     buat_grup, join_grup, get_my_groups, get_group_members, keluar_grup, hapus_grup,
-    get_notes_by_id, get_todos_by_id, get_reminders_by_id, get_titled_notes_by_id
+    buat_konfirmasi, get_konfirmasi, hapus_konfirmasi
 )
 
 # ===== CONFIG =====
@@ -727,7 +727,6 @@ async def kirim_pilih_data(update, context):
     chat_id = str(update.effective_chat.id)
     try:
         indexes = [int(x.strip()) - 1 for x in update.message.text.split(",")]
-        data = context.user_data["kirim_data"]
         context.user_data["kirim_indexes"] = indexes
 
         groups = get_my_groups(chat_id)
@@ -766,7 +765,9 @@ async def kirim_pilih_grup(update, context):
     context.user_data["kirim_members"] = other_members
     keyboard = []
     for m in other_members:
-        keyboard.append([InlineKeyboardButton(f"👤 {m['chat_id']}", callback_data=f"kirimmember_{m['chat_id']}")])
+        # Tampilkan nama kalau ada, fallback ke chat_id
+        nama = m.get('nickname') or m['chat_id']
+        keyboard.append([InlineKeyboardButton(f"👤 {nama}", callback_data=f"kirimmember_{m['chat_id']}")])
     keyboard.append([InlineKeyboardButton("👥 Semua Member", callback_data="kirimmember_all")])
     keyboard.append([InlineKeyboardButton("❌ Batal", callback_data="kirimmember_batal")])
 
@@ -785,31 +786,102 @@ async def kirim_pilih_member(update, context):
     indexes = context.user_data["kirim_indexes"]
     data = context.user_data["kirim_data"]
     members = context.user_data["kirim_members"]
+    from_user = query.from_user
+    from_name = from_user.first_name or from_user.username or from_user.id
 
     if query.data == "kirimmember_all":
         target_ids = [m['chat_id'] for m in members]
     else:
         target_ids = [query.data.replace("kirimmember_", "")]
 
-    # Buat pesan
-    msg = "📨 *Pesan dari teman kamu:*\n\n"
-    for i in indexes:
-        item = data[i]
-        if kategori == "reminder":
-            msg += f"⏰ `{item['time']}` | `{item['days']}` | {item['text']}\n"
-        elif kategori == "catat":
-            msg += f"📝 {item['text']}\n"
-        elif kategori == "judul":
-            msg += f"📓 *{item['title']}*\n{item['content']}\n"
-        elif kategori == "todo":
-            msg += f"📌 {item['status']} {item['task']}\n"
-
-    # Kirim ke target
+    # Kirim konfirmasi ke tiap target
     for target_id in target_ids:
-        await context.bot.send_message(chat_id=target_id, text=msg, parse_mode="Markdown")
+        # Buat preview pesan
+        preview = ""
+        items_data = []
+        for i in indexes:
+            item = data[i]
+            if kategori == "reminder":
+                preview += f"⏰ `{item['time']}` | `{item['days']}` | {item['text']}\n"
+            elif kategori == "catat":
+                preview += f"📝 {item['text']}\n"
+            elif kategori == "judul":
+                preview += f"📓 *{item['title']}*\n{item['content']}\n"
+            elif kategori == "todo":
+                preview += f"📌 {item['status']} {item['task']}\n"
+            items_data.append(item)
+
+        # Simpan ke db
+        konfirmasi_id = buat_konfirmasi(
+            from_chat_id=str(from_user.id),
+            to_chat_id=target_id,
+            kategori=kategori,
+            data=items_data
+        )
+
+        # Kirim pesan konfirmasi dengan inline button
+        msg = f"📨 *{from_name}* mengirimkan data ke kamu:\n\n{preview}\nTambahkan ke datamu?"
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("✅ Tambahkan", callback_data=f"konfirmasi_yes_{konfirmasi_id}"),
+                InlineKeyboardButton("❌ Tolak", callback_data=f"konfirmasi_no_{konfirmasi_id}"),
+            ]
+        ])
+        await context.bot.send_message(
+            chat_id=target_id,
+            text=msg,
+            parse_mode="Markdown",
+            reply_markup=keyboard
+        )
 
     await query.edit_message_text(f"✅ Berhasil dikirim ke {len(target_ids)} member!")
     return ConversationHandler.END
+
+# ===== HANDLER KONFIRMASI =====
+async def handle_konfirmasi(update, context):
+    query = update.callback_query
+    await query.answer()
+    chat_id = str(query.from_user.id)
+
+    action, konfirmasi_id = query.data.replace("konfirmasi_", "").split("_", 1)
+    konfirmasi_id = int(konfirmasi_id)
+
+    k = get_konfirmasi(konfirmasi_id)
+
+    if k is None or k == "expired":
+        await query.edit_message_text("⏰ Konfirmasi sudah expired (24 jam)!")
+        return
+
+    if action == "yes":
+        kategori = k['kategori']
+        items = k['data']
+
+        if kategori == "reminder":
+            for item in items:
+                add_reminder(chat_id, item['time'], item['days'], item['text'])
+            setup_scheduler(context.application)
+            await query.edit_message_text("✅ Reminder berhasil ditambahkan ke datamu!")
+
+        elif kategori == "catat":
+            for item in items:
+                add_note(chat_id, item['text'])
+            await query.edit_message_text("✅ Catatan berhasil ditambahkan ke datamu!")
+
+        elif kategori == "judul":
+            for item in items:
+                add_titled_note(chat_id, item['title'], item['content'])
+            await query.edit_message_text("✅ Catatan judul berhasil ditambahkan ke datamu!")
+
+        elif kategori == "todo":
+            for item in items:
+                add_todo(chat_id, item['task'])
+            await query.edit_message_text("✅ Tugas berhasil ditambahkan ke datamu!")
+
+        hapus_konfirmasi(konfirmasi_id)
+
+    elif action == "no":
+        hapus_konfirmasi(konfirmasi_id)
+        await query.edit_message_text("❌ Data ditolak.")
 
 # ===== SCHEDULER =====
 async def post_init(application: Application):
@@ -900,6 +972,7 @@ def main():
     )
 
     app.add_handler(conv_handler)
+    app.add_handler(CallbackQueryHandler(handle_konfirmasi, pattern="^konfirmasi_"))
     app.add_handler(CommandHandler("test", test))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("list", list_reminders))

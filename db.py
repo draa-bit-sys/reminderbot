@@ -1,6 +1,7 @@
 import os
 import random
 import string
+import json
 from supabase import create_client
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
@@ -103,7 +104,6 @@ def join_grup(chat_id, code):
     if not res.data:
         return None
     group = res.data[0]
-    # Cek sudah member belum
     cek = supabase.table("group_members").select("*").eq("group_id", group['id']).eq("chat_id", chat_id).execute()
     if cek.data:
         return "sudah"
@@ -124,11 +124,33 @@ def keluar_grup(chat_id, group_id):
 def hapus_grup(group_id):
     supabase.table("groups").delete().eq("id", group_id).execute()
 
-def get_group_by_code(code):
-    res = supabase.table("groups").select("*").eq("code", code).execute()
-    return res.data[0] if res.data else None
+# ===== PENDING CONFIRMATIONS =====
+def buat_konfirmasi(from_chat_id, to_chat_id, kategori, data):
+    res = supabase.table("pending_confirmations").insert({
+        "from_chat_id": from_chat_id,
+        "to_chat_id": to_chat_id,
+        "kategori": kategori,
+        "data": data
+    }).execute()
+    return res.data[0]['id']
 
-# ===== KIRIM DATA KE GRUP =====
+def get_konfirmasi(konfirmasi_id):
+    res = supabase.table("pending_confirmations").select("*").eq("id", konfirmasi_id).execute()
+    if not res.data:
+        return None
+    k = res.data[0]
+    # Cek expired
+    from datetime import datetime, timezone
+    expires = datetime.fromisoformat(k['expires_at'].replace('Z', '+00:00'))
+    if datetime.now(timezone.utc) > expires:
+        hapus_konfirmasi(konfirmasi_id)
+        return "expired"
+    return k
+
+def hapus_konfirmasi(konfirmasi_id):
+    supabase.table("pending_confirmations").delete().eq("id", konfirmasi_id).execute()
+
+# ===== GET BY ID =====
 def get_notes_by_id(note_id):
     res = supabase.table("notes").select("*").eq("id", note_id).execute()
     return res.data[0] if res.data else None
