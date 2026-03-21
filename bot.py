@@ -9,7 +9,9 @@ from db import (
     get_reminders, add_reminder, add_reminders_batch, delete_reminder, delete_reminders_batch, edit_reminder,
     get_notes, add_note, delete_note, delete_notes_batch, edit_note,
     get_titled_notes, add_titled_note, delete_titled_note, delete_titled_notes_batch, edit_titled_note,
-    get_todos, add_todo, complete_todo, complete_todos_batch, delete_todo, delete_todos_batch, edit_todo
+    get_todos, add_todo, complete_todo, complete_todos_batch, delete_todo, delete_todos_batch, edit_todo,
+    buat_grup, join_grup, get_my_groups, get_group_members, keluar_grup, hapus_grup,
+    get_notes_by_id, get_todos_by_id, get_reminders_by_id, get_titled_notes_by_id
 )
 
 # ===== CONFIG =====
@@ -52,7 +54,14 @@ scheduler = None
     EDIT_PILIH_HARI,
     EDIT_INPUT_NILAI,
     CHECK_TODOS,
-) = range(16)
+    GRUP_JOIN_INPUT,
+    GRUP_BUAT_INPUT,
+    GRUP_KELUAR_PILIH,
+    KIRIM_PILIH_KATEGORI,
+    KIRIM_PILIH_DATA,
+    KIRIM_PILIH_GRUP,
+    KIRIM_PILIH_MEMBER,
+) = range(23)
 
 async def kirim_pesan(bot: Bot, chat_id: str, teks: str):
     await bot.send_message(chat_id=chat_id, text=teks)
@@ -82,6 +91,13 @@ async def help_command(update, context):
 
 *To-Do:*
 /checktodos - Tandai tugas selesai
+
+*Grup:*
+/buatgrup - Buat grup baru
+/joingrup - Join grup
+/infogrup - Info & member grup
+/keluargrup - Keluar dari grup
+/kirim - Kirim data ke member grup
 
 /help - Tampilkan bantuan ini
 /batal - Batalkan aksi saat ini"""
@@ -157,10 +173,7 @@ async def tambah(update, context):
             for item in items:
                 parts = item.strip().split(" ", 2)
                 if len(parts) < 3:
-                    await update.message.reply_text(
-                        f"❌ Format salah di: `{item.strip()}`",
-                        parse_mode="Markdown"
-                    )
+                    await update.message.reply_text(f"❌ Format salah di: `{item.strip()}`", parse_mode="Markdown")
                     return ConversationHandler.END
 
                 time, days, text = parts
@@ -180,11 +193,7 @@ async def tambah(update, context):
             await update.message.reply_text("❌ Format salah!")
         return ConversationHandler.END
 
-    await update.message.reply_text(
-        "➕ *Tambah apa?*",
-        reply_markup=keyboard_kategori("tambah"),
-        parse_mode="Markdown"
-    )
+    await update.message.reply_text("➕ *Tambah apa?*", reply_markup=keyboard_kategori("tambah"), parse_mode="Markdown")
     return TAMBAH_PILIH_KATEGORI
 
 async def tambah_pilih_kategori(update, context):
@@ -292,11 +301,7 @@ async def tambah_terima_todo(update, context):
 
 # ===== HAPUS =====
 async def hapus(update, context):
-    await update.message.reply_text(
-        "🗑️ *Hapus apa?*",
-        reply_markup=keyboard_kategori("hapus"),
-        parse_mode="Markdown"
-    )
+    await update.message.reply_text("🗑️ *Hapus apa?*", reply_markup=keyboard_kategori("hapus"), parse_mode="Markdown")
     return HAPUS_PILIH_KATEGORI
 
 async def hapus_pilih_kategori(update, context):
@@ -319,7 +324,6 @@ async def hapus_pilih_kategori(update, context):
         msg = "🗑️ *Hapus Reminder*\n\n"
         for i, r in enumerate(data):
             msg += f"{i+1}. `{r['time']}` | `{r['days']}` | {r['text']}\n"
-
     elif kategori == "catat":
         data = get_notes(chat_id)
         if not data:
@@ -328,7 +332,6 @@ async def hapus_pilih_kategori(update, context):
         msg = "🗑️ *Hapus Catatan*\n\n"
         for i, n in enumerate(data):
             msg += f"{i+1}. {n['text']}\n"
-
     elif kategori == "judul":
         data = get_titled_notes(chat_id)
         if not data:
@@ -337,7 +340,6 @@ async def hapus_pilih_kategori(update, context):
         msg = "🗑️ *Hapus Catatan Judul*\n\n"
         for i, n in enumerate(data):
             msg += f"{i+1}. *{n['title']}* — {n['content'][:30]}...\n"
-
     elif kategori == "todo":
         data = get_todos(chat_id)
         if not data:
@@ -365,17 +367,14 @@ async def hapus_pilih_nomor(update, context):
             deleted = [data[i]['text'] for i in indexes]
             delete_reminders_batch(chat_id, ids)
             setup_scheduler(context.application)
-
         elif kategori == "catat":
             ids = [data[i]['id'] for i in indexes]
             deleted = [data[i]['text'] for i in indexes]
             delete_notes_batch(chat_id, ids)
-
         elif kategori == "judul":
             ids = [data[i]['id'] for i in indexes]
             deleted = [data[i]['title'] for i in indexes]
             delete_titled_notes_batch(chat_id, ids)
-
         elif kategori == "todo":
             ids = [data[i]['id'] for i in indexes]
             deleted = [data[i]['task'] for i in indexes]
@@ -388,11 +387,7 @@ async def hapus_pilih_nomor(update, context):
 
 # ===== EDIT =====
 async def edit(update, context):
-    await update.message.reply_text(
-        "✏️ *Edit apa?*",
-        reply_markup=keyboard_kategori("edit"),
-        parse_mode="Markdown"
-    )
+    await update.message.reply_text("✏️ *Edit apa?*", reply_markup=keyboard_kategori("edit"), parse_mode="Markdown")
     return EDIT_PILIH_KATEGORI
 
 async def edit_pilih_kategori(update, context):
@@ -415,7 +410,6 @@ async def edit_pilih_kategori(update, context):
         msg = "✏️ *Edit Reminder*\n\n"
         for i, r in enumerate(data):
             msg += f"{i+1}. `{r['time']}` | `{r['days']}` | {r['text']}\n"
-
     elif kategori == "catat":
         data = get_notes(chat_id)
         if not data:
@@ -424,7 +418,6 @@ async def edit_pilih_kategori(update, context):
         msg = "✏️ *Edit Catatan*\n\n"
         for i, n in enumerate(data):
             msg += f"{i+1}. {n['text']}\n"
-
     elif kategori == "judul":
         data = get_titled_notes(chat_id)
         if not data:
@@ -433,7 +426,6 @@ async def edit_pilih_kategori(update, context):
         msg = "✏️ *Edit Catatan Judul*\n\n"
         for i, n in enumerate(data):
             msg += f"{i+1}. *{n['title']}* — {n['content'][:30]}...\n"
-
     elif kategori == "todo":
         data = get_todos(chat_id)
         if not data:
@@ -467,7 +459,6 @@ async def edit_pilih_nomor(update, context):
             ]
             await update.message.reply_text("✏️ Edit apa?", reply_markup=InlineKeyboardMarkup(keyboard))
             return EDIT_PILIH_FIELD
-
         elif kategori == "judul":
             keyboard = [
                 [
@@ -478,7 +469,6 @@ async def edit_pilih_nomor(update, context):
             ]
             await update.message.reply_text("✏️ Edit apa?", reply_markup=InlineKeyboardMarkup(keyboard))
             return EDIT_PILIH_FIELD
-
         else:
             if kategori == "catat":
                 await update.message.reply_text(f"✏️ Nilai lama: `{data[index]['text']}`\n\nKetik nilai baru:", parse_mode="Markdown")
@@ -543,7 +533,6 @@ async def edit_pilih_hari_baru(update, context):
     label = DAY_LABELS.get(hari, hari)
 
     edit_reminder(chat_id, rid, "days", hari)
-    setup_scheduler(query._application)
     await query.edit_message_text(f"✅ Hari diupdate ke *{label}*!", parse_mode="Markdown")
     return ConversationHandler.END
 
@@ -602,6 +591,226 @@ async def konfirmasi_check_todos(update, context):
         await update.message.reply_text("❌ Format salah!\nKetik nomor: `1` atau `1,2,3`", parse_mode="Markdown")
     return ConversationHandler.END
 
+# ===== GRUP =====
+async def buat_grup_cmd(update, context):
+    await update.message.reply_text("👥 Ketik nama grup:")
+    return GRUP_BUAT_INPUT
+
+async def buat_grup_input(update, context):
+    chat_id = str(update.effective_chat.id)
+    name = update.message.text.strip()
+    code, group_id = buat_grup(chat_id, name)
+    await update.message.reply_text(
+        f"✅ Grup *{name}* dibuat!\n\nKode: `{code}`\n\nShare kode ini ke teman kamu!",
+        parse_mode="Markdown"
+    )
+    return ConversationHandler.END
+
+async def join_grup_cmd(update, context):
+    await update.message.reply_text("🔑 Ketik kode grup:")
+    return GRUP_JOIN_INPUT
+
+async def join_grup_input(update, context):
+    chat_id = str(update.effective_chat.id)
+    code = update.message.text.strip().upper()
+    result = join_grup(chat_id, code)
+
+    if result is None:
+        await update.message.reply_text("❌ Kode grup tidak ditemukan!")
+    elif result == "sudah":
+        await update.message.reply_text("⚠️ Kamu sudah bergabung di grup ini!")
+    else:
+        await update.message.reply_text(f"✅ Berhasil join grup *{result['name']}*!", parse_mode="Markdown")
+    return ConversationHandler.END
+
+async def info_grup(update, context):
+    chat_id = str(update.effective_chat.id)
+    groups = get_my_groups(chat_id)
+    if not groups:
+        await update.message.reply_text("Kamu belum bergabung di grup manapun.")
+        return
+
+    msg = "👥 *Grup Kamu:*\n\n"
+    for g in groups:
+        members = get_group_members(g['id'])
+        msg += f"*{g['name']}*\n"
+        msg += f"Kode: `{g['code']}`\n"
+        msg += f"Member: {len(members)} orang\n\n"
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
+async def keluar_grup_cmd(update, context):
+    chat_id = str(update.effective_chat.id)
+    groups = get_my_groups(chat_id)
+    if not groups:
+        await update.message.reply_text("Kamu belum bergabung di grup manapun.")
+        return ConversationHandler.END
+
+    keyboard = [[InlineKeyboardButton(g['name'], callback_data=f"keluargrup_{g['id']}")] for g in groups]
+    keyboard.append([InlineKeyboardButton("❌ Batal", callback_data="keluargrup_batal")])
+    await update.message.reply_text("Pilih grup yang mau ditinggalkan:", reply_markup=InlineKeyboardMarkup(keyboard))
+    return GRUP_KELUAR_PILIH
+
+async def keluar_grup_pilih(update, context):
+    query = update.callback_query
+    await query.answer()
+    chat_id = str(query.from_user.id)
+
+    if query.data == "keluargrup_batal":
+        await query.edit_message_text("❌ Dibatalkan.")
+        return ConversationHandler.END
+
+    group_id = int(query.data.replace("keluargrup_", ""))
+    keluar_grup(chat_id, group_id)
+    await query.edit_message_text("✅ Berhasil keluar dari grup!")
+    return ConversationHandler.END
+
+# ===== KIRIM =====
+async def kirim_cmd(update, context):
+    await update.message.reply_text(
+        "📤 *Kirim data apa?*",
+        reply_markup=keyboard_kategori("kirim"),
+        parse_mode="Markdown"
+    )
+    return KIRIM_PILIH_KATEGORI
+
+async def kirim_pilih_kategori(update, context):
+    query = update.callback_query
+    await query.answer()
+    kategori = query.data.replace("kirim_", "")
+
+    if kategori == "batal":
+        await query.edit_message_text("❌ Dibatalkan.")
+        return ConversationHandler.END
+
+    context.user_data["kirim_kategori"] = kategori
+    chat_id = str(query.from_user.id)
+
+    if kategori == "reminder":
+        data = get_reminders(chat_id)
+        if not data:
+            await query.edit_message_text("Belum ada reminder.")
+            return ConversationHandler.END
+        msg = "📤 *Pilih Reminder:*\n\n"
+        for i, r in enumerate(data):
+            msg += f"{i+1}. `{r['time']}` | `{r['days']}` | {r['text']}\n"
+    elif kategori == "catat":
+        data = get_notes(chat_id)
+        if not data:
+            await query.edit_message_text("Belum ada catatan.")
+            return ConversationHandler.END
+        msg = "📤 *Pilih Catatan:*\n\n"
+        for i, n in enumerate(data):
+            msg += f"{i+1}. {n['text']}\n"
+    elif kategori == "judul":
+        data = get_titled_notes(chat_id)
+        if not data:
+            await query.edit_message_text("Belum ada catatan judul.")
+            return ConversationHandler.END
+        msg = "📤 *Pilih Catatan Judul:*\n\n"
+        for i, n in enumerate(data):
+            msg += f"{i+1}. *{n['title']}*\n"
+    elif kategori == "todo":
+        data = get_todos(chat_id)
+        if not data:
+            await query.edit_message_text("Belum ada tugas.")
+            return ConversationHandler.END
+        msg = "📤 *Pilih Tugas:*\n\n"
+        for i, t in enumerate(data):
+            msg += f"{i+1}. {t['status']} {t['task']}\n"
+
+    context.user_data["kirim_data"] = data
+    msg += "\nKetik nomor: `1` atau `1,2,3`"
+    await query.edit_message_text(msg, parse_mode="Markdown")
+    return KIRIM_PILIH_DATA
+
+async def kirim_pilih_data(update, context):
+    chat_id = str(update.effective_chat.id)
+    try:
+        indexes = [int(x.strip()) - 1 for x in update.message.text.split(",")]
+        data = context.user_data["kirim_data"]
+        context.user_data["kirim_indexes"] = indexes
+
+        groups = get_my_groups(chat_id)
+        if not groups:
+            await update.message.reply_text("❌ Kamu belum bergabung di grup manapun!")
+            return ConversationHandler.END
+
+        keyboard = [[InlineKeyboardButton(g['name'], callback_data=f"kirimgrup_{g['id']}")] for g in groups]
+        keyboard.append([InlineKeyboardButton("❌ Batal", callback_data="kirimgrup_batal")])
+        context.user_data["kirim_groups"] = groups
+        await update.message.reply_text("👥 Pilih grup tujuan:", reply_markup=InlineKeyboardMarkup(keyboard))
+        return KIRIM_PILIH_GRUP
+    except:
+        await update.message.reply_text("❌ Format salah!")
+        return KIRIM_PILIH_DATA
+
+async def kirim_pilih_grup(update, context):
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "kirimgrup_batal":
+        await query.edit_message_text("❌ Dibatalkan.")
+        return ConversationHandler.END
+
+    group_id = int(query.data.replace("kirimgrup_", ""))
+    context.user_data["kirim_group_id"] = group_id
+    chat_id = str(query.from_user.id)
+
+    members = get_group_members(group_id)
+    other_members = [m for m in members if m['chat_id'] != chat_id]
+
+    if not other_members:
+        await query.edit_message_text("❌ Tidak ada member lain di grup ini!")
+        return ConversationHandler.END
+
+    context.user_data["kirim_members"] = other_members
+    keyboard = []
+    for m in other_members:
+        keyboard.append([InlineKeyboardButton(f"👤 {m['chat_id']}", callback_data=f"kirimmember_{m['chat_id']}")])
+    keyboard.append([InlineKeyboardButton("👥 Semua Member", callback_data="kirimmember_all")])
+    keyboard.append([InlineKeyboardButton("❌ Batal", callback_data="kirimmember_batal")])
+
+    await query.edit_message_text("👤 Kirim ke siapa?", reply_markup=InlineKeyboardMarkup(keyboard))
+    return KIRIM_PILIH_MEMBER
+
+async def kirim_pilih_member(update, context):
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "kirimmember_batal":
+        await query.edit_message_text("❌ Dibatalkan.")
+        return ConversationHandler.END
+
+    kategori = context.user_data["kirim_kategori"]
+    indexes = context.user_data["kirim_indexes"]
+    data = context.user_data["kirim_data"]
+    members = context.user_data["kirim_members"]
+
+    if query.data == "kirimmember_all":
+        target_ids = [m['chat_id'] for m in members]
+    else:
+        target_ids = [query.data.replace("kirimmember_", "")]
+
+    # Buat pesan
+    msg = "📨 *Pesan dari teman kamu:*\n\n"
+    for i in indexes:
+        item = data[i]
+        if kategori == "reminder":
+            msg += f"⏰ `{item['time']}` | `{item['days']}` | {item['text']}\n"
+        elif kategori == "catat":
+            msg += f"📝 {item['text']}\n"
+        elif kategori == "judul":
+            msg += f"📓 *{item['title']}*\n{item['content']}\n"
+        elif kategori == "todo":
+            msg += f"📌 {item['status']} {item['task']}\n"
+
+    # Kirim ke target
+    for target_id in target_ids:
+        await context.bot.send_message(chat_id=target_id, text=msg, parse_mode="Markdown")
+
+    await query.edit_message_text(f"✅ Berhasil dikirim ke {len(target_ids)} member!")
+    return ConversationHandler.END
+
 # ===== SCHEDULER =====
 async def post_init(application: Application):
     await application.bot.send_message(
@@ -655,6 +864,10 @@ def main():
             CommandHandler("hapus", hapus),
             CommandHandler("edit", edit),
             CommandHandler("checktodos", check_todos),
+            CommandHandler("buatgrup", buat_grup_cmd),
+            CommandHandler("joingrup", join_grup_cmd),
+            CommandHandler("keluargrup", keluar_grup_cmd),
+            CommandHandler("kirim", kirim_cmd),
         ],
         states={
             TAMBAH_PILIH_KATEGORI: [CallbackQueryHandler(tambah_pilih_kategori, pattern="^tambah_")],
@@ -672,6 +885,13 @@ def main():
             EDIT_PILIH_HARI: [CallbackQueryHandler(edit_pilih_hari_baru, pattern="^edithari_")],
             EDIT_INPUT_NILAI: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_input_nilai)],
             CHECK_TODOS: [MessageHandler(filters.TEXT & ~filters.COMMAND, konfirmasi_check_todos)],
+            GRUP_BUAT_INPUT: [MessageHandler(filters.TEXT & ~filters.COMMAND, buat_grup_input)],
+            GRUP_JOIN_INPUT: [MessageHandler(filters.TEXT & ~filters.COMMAND, join_grup_input)],
+            GRUP_KELUAR_PILIH: [CallbackQueryHandler(keluar_grup_pilih, pattern="^keluargrup_")],
+            KIRIM_PILIH_KATEGORI: [CallbackQueryHandler(kirim_pilih_kategori, pattern="^kirim_")],
+            KIRIM_PILIH_DATA: [MessageHandler(filters.TEXT & ~filters.COMMAND, kirim_pilih_data)],
+            KIRIM_PILIH_GRUP: [CallbackQueryHandler(kirim_pilih_grup, pattern="^kirimgrup_")],
+            KIRIM_PILIH_MEMBER: [CallbackQueryHandler(kirim_pilih_member, pattern="^kirimmember_")],
         },
         fallbacks=[CommandHandler("batal", batal)],
         per_message=False,
@@ -686,6 +906,7 @@ def main():
     app.add_handler(CommandHandler("lihatcatat", lihat_catat))
     app.add_handler(CommandHandler("lihatjudul", lihat_judul))
     app.add_handler(CommandHandler("listtodo", list_todo))
+    app.add_handler(CommandHandler("infogrup", info_grup))
     setup_scheduler(app)
     logging.info("Bot berjalan...")
     app.run_polling()
