@@ -965,14 +965,15 @@ def main():
             KIRIM_PILIH_GRUP: [CallbackQueryHandler(kirim_pilih_grup, pattern="^kirimgrup_")],
             KIRIM_PILIH_MEMBER: [CallbackQueryHandler(kirim_pilih_member, pattern="^kirimmember_")],
         },
-        fallbacks=[CommandHandler("batal", batal)],
+        fallbacks=[
+        CommandHandler("batal", batal),
+        CallbackQueryHandler(handle_konfirmasi, pattern="^konfirmasi_")],
         per_message=False,
         per_chat=True,
         conversation_timeout=60,
     )
 
     app.add_handler(conv_handler)
-    app.add_handler(CallbackQueryHandler(handle_konfirmasi, pattern="^konfirmasi_"))
     app.add_handler(CommandHandler("test", test))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("list", list_reminders))
