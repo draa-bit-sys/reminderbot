@@ -139,10 +139,13 @@ def get_konfirmasi(konfirmasi_id):
     if not res.data:
         return None
     k = res.data[0]
-    # Cek expired
     from datetime import datetime, timezone
-    expires = datetime.fromisoformat(k['expires_at'].replace('Z', '+00:00'))
-    if datetime.now(timezone.utc) > expires:
+    expires_str = k['expires_at'].replace('Z', '+00:00')
+    expires = datetime.fromisoformat(expires_str)
+    now = datetime.now(timezone.utc)
+    if expires.tzinfo is None:
+        expires = expires.replace(tzinfo=timezone.utc)
+    if now > expires:
         hapus_konfirmasi(konfirmasi_id)
         return "expired"
     return k
