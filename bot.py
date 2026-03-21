@@ -965,15 +965,14 @@ def main():
             KIRIM_PILIH_GRUP: [CallbackQueryHandler(kirim_pilih_grup, pattern="^kirimgrup_")],
             KIRIM_PILIH_MEMBER: [CallbackQueryHandler(kirim_pilih_member, pattern="^kirimmember_")],
         },
-        fallbacks=[
-        CommandHandler("batal", batal),
-        CallbackQueryHandler(handle_konfirmasi, pattern="^konfirmasi_")],
+        fallbacks=[CommandHandler("batal", batal)],
         per_message=False,
         per_chat=True,
         conversation_timeout=60,
     )
 
     app.add_handler(conv_handler)
+    app.add_handler(CallbackQueryHandler(handle_konfirmasi, pattern="^konfirmasi_"))  # tambah ini
     app.add_handler(CommandHandler("test", test))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("list", list_reminders))
@@ -981,9 +980,6 @@ def main():
     app.add_handler(CommandHandler("lihatjudul", lihat_judul))
     app.add_handler(CommandHandler("listtodo", list_todo))
     app.add_handler(CommandHandler("infogrup", info_grup))
-    setup_scheduler(app)
-    logging.info("Bot berjalan...")
-    app.run_polling()
 
 if __name__ == "__main__":
     main()
